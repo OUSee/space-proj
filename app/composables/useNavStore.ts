@@ -7,7 +7,7 @@ import type { StateVector, IMUData } from '~/types';
 
 export const useNavStore = defineStore('nav', () => {
 	const filter = ref<AEKFFilter>();
-	const gateway = ref(new SensorGateway());
+	const gateway = ref<SensorGateway>();
 	const xest = ref<StateVector>({
 		pos: [0, 0, 0],
 		vel: [0, 0, 0],
@@ -26,10 +26,14 @@ export const useNavStore = defineStore('nav', () => {
 	});
 	const fps = ref(0);
 	const init = () => {
-		/* new AEKFFilter(0.01, Q, R) */
+		// Placeholder covariances: Q 15x15, R 3x3
+		const Q = Array.from({ length: 15 }, () => Array(15).fill(0.1));
+		const R = Array.from({ length: 3 }, () => Array(3).fill(0.1));
+		filter.value = new AEKFFilter(0.01, Q, R);
 	};
 	const connectPhone = async (id: string) => {
 		if (!id) throw new Error('Invalid phone ID');
+		if (!gateway.value) gateway.value = new SensorGateway();
 		await gateway.value.connect(id, feedIMU);
 	};
 	const feedIMU = (imu: IMUData) => {
