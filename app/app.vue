@@ -5,8 +5,6 @@
 import { onMounted } from 'vue';
 import { useNavStore } from '~/composables/useNavStore';
 
-const router = useRouter();
-const route = useRoute();
 const isMobileDevice = ref(false);
 const hasGyro = ref(false);
 
@@ -14,6 +12,8 @@ const init = typeof window !== 'undefined' ? useNavStore().init : () => { };
 
 onMounted(async () => {
   if (typeof window !== 'undefined') {
+    const router = useRouter();
+    const route = useRoute();
     // 1. Детект мобильного
     const ua = navigator.userAgent.toLowerCase();
     isMobileDevice.value = /iphone|ipad|ipod|android|mobile/.test(ua);
