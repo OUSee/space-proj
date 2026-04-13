@@ -23,7 +23,7 @@ onMounted(async () => {
         port: 9000,
         path: '/',
         debug: 2,
-        secure: false, // ← HTTP, НЕ wss!
+        secure: true, // ← HTTP, НЕ wss!
         config: {
             iceServers: [
                 // ← Обязательно для local!
@@ -144,9 +144,8 @@ const requestGeoPermission = async () => {
             return;
         }
 
-        status.value = '🔄 Getting GPS fix...';
+        status.value = '🔄 Getting GPS/WiFi fix... (15-60s)';
 
-        // 1. Сначала single position с LONG timeout
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 geoGranted.value = true;
@@ -154,56 +153,54 @@ const requestGeoPermission = async () => {
                     pos: [position.coords.latitude, position.coords.longitude, position.coords.altitude || 0],
                     ts: performance.now(),
                 };
-                status.value = `✓ GPS OK: ${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)}`;
+                status.value = `✓ GPS OK: ${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)} | accuracy: ${position.coords.accuracy}m`;
 
-                // 2. Только после успеха — watchPosition
-                const watchId = navigator.geolocation.watchPosition(
+                // WiFi fallback watch (быстрые обновления)
+                navigator.geolocation.watchPosition(
                     (pos) => {
                         latestGPS.value = {
                             pos: [pos.coords.latitude, pos.coords.longitude, pos.coords.altitude || 0],
                             ts: performance.now(),
                         };
-                        console.log('GPS update:', pos.coords.latitude.toFixed(5), pos.coords.longitude.toFixed(5));
                     },
-                    (err) => {
-                        console.error('GPS watch error:', err);
-                        status.value = '⚠️ GPS timeout, retrying...';
-                    },
+                    (err) => console.log('Watch timeout OK (normal indoor)'),
                     {
-                        enableHighAccuracy: true,
-                        timeout: 10000,        // 10 сек между обновлениями
-                        maximumAge: 5000       // Используй кэш до 5 сек
+                        enableHighAccuracy: false,  // WiFi/Network fallback
+                        timeout: 30000,             // 30s
+                        maximumAge: 10000           // Кэш 10s
                     }
                 );
-
-                // Cleanup через 30 сек если не нужно
-                setTimeout(() => {
-                    navigator.geolocation.clearWatch(watchId);
-                }, 30000);
-
             },
             (error) => {
                 console.error('GPS error:', error.code, error.message);
-                let msg = '';
-                switch (error.code) {
-                    case error.PERMISSION_DENIED: msg = '✗ GPS permission denied'; break;
-                    case error.POSITION_UNAVAILABLE: msg = '✗ No GPS signal'; break;
-                    case error.TIMEOUT: msg = '⏱️ GPS timeout - no signal'; break;
-                }
-                status.value = msg;
+                // Fallback: Network location (WiFi)
+                status.value = '📶 Using WiFi location...';
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        geoGranted.value = true;
+                        latestGPS.value.pos = [pos.coords.latitude, pos.coords.longitude, pos.coords.altitude || 0];
+                        status.value = `✓ WiFi OK: ${pos.coords.accuracy < 100 ? 'Good' : 'Rough'} (${pos.coords.accuracy}m)`;
+                    },
+                    () => {
+                        status.value = '⚠️ No GPS/WiFi - outdoors recommended';
+                    },
+                    {
+                        enableHighAccuracy: false,  // WiFi + cell towers
+                        timeout: 30000,
+                        maximumAge: 60000
+                    }
+                );
             },
             {
                 enableHighAccuracy: true,
-                timeout: 15000,        // 15 сек на первый fix
-                maximumAge: 0          // Свежие данные
+                timeout: 45000,          // 45 сек на GPS fix
+                maximumAge: 30000        // Кэш 30 сек
             }
         );
     } catch (error) {
-        console.error('GPS error:', error);
         status.value = '✗ GPS failed';
     }
 };
-
 onMounted(() => {
     requestGyroPermission();
     requestGeoPermission();
