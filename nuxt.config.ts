@@ -8,6 +8,9 @@ export default defineNuxtConfig({
 	ssr: false,
 	app: {
 		baseURL: '/space-proj/',
+		head: {
+			link: [{ rel: 'icon', href: '/space-proj/favicon.ico' }],
+		},
 	},
 	imports: { autoImport: true },
 
