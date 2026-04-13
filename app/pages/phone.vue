@@ -58,9 +58,9 @@ peer.on('connection', (conn) => {
 
 
 <template>
-  <ClientOnly>
-    <div id="status">ID: {{ peerId }}<br>Status: {{ status }}</div>
-  </ClientOnly>
+    <ClientOnly>
+        <div id="status">ID: {{ peerId }}<br>Status: {{ status }}</div>
+    </ClientOnly>
 </template>
 
 <style>
