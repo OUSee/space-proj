@@ -22,15 +22,25 @@ const connect = async () => {
 <template>
     <div>
         <input
+            style="background-color: grey;"
             v-model="phoneId"
             placeholder="Phone ID"
         />
         <button @click="connect">Connect</button>
-        <div>{{ status }}</div>
+        <div style="margin-top: 20px;">{{ status }}</div>
     </div>
 </template>
 
 <style
     scoped
     lang="scss"
-></style>
+>
+* {
+    color: white;
+}
+
+button {
+    background-color: black;
+    border: 1px solid lightgreen;
+}
+</style>

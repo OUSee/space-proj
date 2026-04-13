@@ -1,5 +1,10 @@
 // # Matrix ops (multiply, inverse)
 export class MatrixUtils {
+	static eye(size: number): number[][] {
+		return Array.from({ length: size }, (_, i) =>
+			Array.from({ length: size }, (_, j) => (i === j ? 1 : 0)),
+		);
+	}
 	static multiply(A: number[][], B: number[][]): number[][] {
 		if (
 			A.length === 0 ||
@@ -64,10 +69,5 @@ export class MatrixUtils {
 			throw new Error('Matrix rows have inconsistent lengths');
 		}
 		return A[0]!.map((_, i) => A.map((row) => row[i]!));
-	}
-	static eye(n: number): number[][] {
-		return Array.from({ length: n }, (_, i) =>
-			Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)),
-		);
 	}
 }

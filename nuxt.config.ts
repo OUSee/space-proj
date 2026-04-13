@@ -47,6 +47,11 @@ export default defineNuxtConfig({
 		inlineStyles: false, // основной фикс для новых версий (по умолчанию true)
 	},
 
+	devServer: {
+		host: '0.0.0.0',
+		port: 3000,
+	},
+
 	// css: ['~/assets/styles/index.scss'],
 
 	// vitepwa: {  // ← pwa → vitepwa
