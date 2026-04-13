@@ -12,6 +12,7 @@ export default defineNuxtConfig({
 	imports: { autoImport: true },
 
 	vite: {
+		base: '/space-proj/',
 		build: {
 			target: 'es2020',
 			cssCodeSplit: false,
