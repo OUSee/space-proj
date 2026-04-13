@@ -13,9 +13,11 @@ export class SensorGateway {
 
 		return new Promise((resolve, reject) => {
 			const p = new Peer('pc-navigator', {
-				debug: 1,
+				host: '192.168.0.46', // ← ТВОЙ PC IP (ipconfig)
+				port: 9000, // ← peerjs --port 9000
+				path: '/',
+				debug: 2,
 			});
-
 			p.on('open', (id: string) => {
 				console.log('Peer initialized with ID:', id);
 				this.peer = p;

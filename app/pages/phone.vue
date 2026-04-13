@@ -18,7 +18,12 @@ onMounted(async () => {
 
     const PeerModule = await import('peerjs');
     const Peer = PeerModule.default;
-    const peer = new Peer(peerId.value, { debug: 1 });
+    const peer = new Peer(peerId.value, {
+        host: '192.168.0.46',  // ← Тот же PC IP!
+        port: 9000,
+        path: '/',
+        debug: 2
+    });
 
     peer.on('open', (id: string) => {
         status.value = 'Ready for connection';
@@ -191,6 +196,11 @@ const requestGeoPermission = async () => {
         status.value = '✗ GPS failed';
     }
 };
+
+onMounted(() => {
+    requestGyroPermission();
+    requestGeoPermission();
+})
 </script>
 
 
