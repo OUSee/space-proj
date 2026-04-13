@@ -23,28 +23,54 @@ const pos = computed(() => store.xest.pos[0] || 0);
 onMounted(async () => {
     // init scene, camera, phone model (box 0.15x0.3), trajectory line, OrbitControls, animate loop 60 FPS
     scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x222222);
+
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    renderer = new THREE.WebGLRenderer({ canvas: canvas.value });
+
+    renderer = new THREE.WebGLRenderer({ canvas: canvas.value, antialias: true });
+
     renderer.setSize(window.innerWidth, window.innerHeight);
+
     controls = new OrbitControls(camera, renderer.domElement);
+
+    // Освещение (важно для Lambert)
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+    scene.add(ambientLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(1, 1, 1);
+    scene.add(dirLight);
+
     // Add phone model
     phone = new THREE.Group();
     const phoneGeo = new THREE.BoxGeometry(1.55, 0.75, 0.08);
-    const phoneMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+    const phoneMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
     const phoneMesh = new THREE.Mesh(phoneGeo, phoneMat);
-
-    // 2. Отдельный wireframe overlay
     const edges = new THREE.EdgesGeometry(phoneGeo);  // Или WireframeGeometry
     const lineMat = new THREE.LineBasicMaterial({ color: 0x00ff88, linewidth: 2 });
     const wireframe = new THREE.LineSegments(edges, lineMat);
     phoneMesh.add(wireframe);  // Прикрепи к mesh (синхронно позиция/ротация
+
     phone.add(phoneMesh);
     scene.add(phone);
+
     // Trajectory line
     const trajGeometry = new THREE.BufferGeometry();
-    trajectoryLine = new THREE.Line(trajGeometry, new THREE.LineBasicMaterial({ color: 0xff0000 }));
+    trajectoryLine = new THREE.Line(trajGeometry, new THREE.LineBasicMaterial({ color: 0x00ff00 }));
+
     scene.add(trajectoryLine);
-    camera.position.z = 5;
+
+    // Бесконечный пол (grid для ориентации)
+    const gridHelper = new THREE.GridHelper(50, 50, 0x444444, 0x90ee90);  // Size=50, divisions=50, lightgray lines, lightgreen center
+    gridHelper.rotation.x = -Math.PI / 2;  // Лежит горизонтально (XY plane)
+    scene.add(gridHelper);
+
+    if (camera.position) {
+        camera.position.set(0, -3.83, 0.52);
+    }
+
+
+
+
     // Animation loop
     let lastTime = 0;
     const animate = (time: number) => {
@@ -85,6 +111,8 @@ watch(() => store.xest, (newState) => {
             <div>Pos: {{ pos.toFixed(2) }} m</div>
             <div>RMSE: {{ rmse.toFixed(3) }} m</div>
             <div>FPS: {{ fps.toFixed(2) }}</div>
+            <div>CAM: x: {{ camera?.position?.x?.toFixed(2) }} y: {{ camera?.position?.y?.toFixed(2) }} z:
+                {{ camera?.position?.z?.toFixed(2) }}</div>
         </div>
     </div>
 </template>

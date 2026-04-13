@@ -11,9 +11,11 @@ onMounted(init);
 <template>
   <div id="app">
     <h1>Indoor Navigation AEKF Demo</h1>
-    <SensorPanel />
-    <NavVisualizer />
-    <MetricsHUD />
+    <ClientOnly>
+      <SensorPanel />
+      <NavVisualizer />
+      <MetricsHUD />
+    </ClientOnly>
   </div>
 </template>
 
