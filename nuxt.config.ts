@@ -1,6 +1,5 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-	// 1. Register the PWA module here
 	modules: ['@pinia/nuxt'],
 
 	compatibilityDate: '2024-04-03', // Use a valid release date
@@ -34,8 +33,9 @@ export default defineNuxtConfig({
 	nitro: {
 		static: true,
 		prerender: {
-			routes: ['/nonexistent'],
+			routes: ['/', '/phone'],
 			crawlLinks: false,
+			failOnError: false,
 		},
 	},
 

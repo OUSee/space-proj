@@ -1,32 +1,34 @@
 {
-  "name": "space-proj",
-  "type": "module",
-  "private": true,
-  "scripts": {
-    "build": "nuxt build",
-    "dev": "nuxt dev",
-    "generate": "nuxt generate",
-    "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
-  },
-  "dependencies": {
-    "@pinia/nuxt": "^0.11.3",
-    "@types/three": "^0.183.1",
-    "nuxt": "^4.4.2",
-    "peerjs": "^1.5.5",
-    "pinia": "^3.0.4",
-    "sass": "^1.99.0",
-    "three": "^0.183.2",
-    "three-stdlib": "^2.36.1",
-    "vite-plugin-pwa": "^1.2.0",
-    "vue": "^3.5.32",
-    "vue-router": "^5.0.4"
-  },
-  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",
-  "devDependencies": {
-    "@oxc-minify/binding-win32-x64-msvc": "^0.125.0",
-    "@oxc-parser/binding-win32-x64-msvc": "^0.125.0",
-    "@oxc-transform/binding-win32-x64-msvc": "^0.125.0",
-    "@vite-pwa/nuxt": "^1.1.1"
-  }
+	"name": "space-proj",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"build": "nuxt build",
+		"dev": "nuxt dev",
+		"generate": "nuxt generate",
+		"postinstall": "nuxt prepare",
+		"preview": "nuxt preview --no-clear",
+		"preview:gh-pages": "mkdir temp && xcopy /E /I .output\\public temp\\space-proj && npx serve temp"
+	},
+	"dependencies": {
+		"@pinia/nuxt": "^0.11.3",
+		"@types/three": "^0.183.1",
+		"nuxt": "^4.4.2",
+		"peerjs": "^1.5.5",
+		"pinia": "^3.0.4",
+		"sass": "^1.99.0",
+		"three": "^0.183.2",
+		"three-stdlib": "^2.36.1",
+		"vite-plugin-pwa": "^1.2.0",
+		"vue": "^3.5.32",
+		"vue-router": "^5.0.4"
+	},
+	"packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",
+	"devDependencies": {
+		"@oxc-minify/binding-win32-x64-msvc": "^0.125.0",
+		"@oxc-parser/binding-win32-x64-msvc": "^0.125.0",
+		"@oxc-transform/binding-win32-x64-msvc": "^0.125.0",
+		"@vite-pwa/nuxt": "^1.1.1",
+		"http-server": "^14.1.1"
+	}
 }

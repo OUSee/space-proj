@@ -26,7 +26,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <ClientOnly>
+  <ClientOnly fallback="Loading 3D + WebRTC...">
     <NuxtPage />
   </ClientOnly>
 </template>
