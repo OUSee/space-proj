@@ -2,57 +2,65 @@
     setup
     lang="ts"
 >
-import Peer from 'peerjs';
+import { onMounted, ref } from 'vue';
 
 const peerId = ref('sensor-phone-' + Math.random().toString(36).substr(2, 9));
-const peer = new Peer(peerId.value);
 const status = ref('Waiting PC...');
 const latestIMU = ref({ accel: [0, 0, 0], gyro: [0, 0, 0], ts: 0 });
 const latestGPS = ref({ pos: [0, 0, 0], ts: 0 });
 
-peer.on('open', (id) => {
-    status.value = 'ID: ' + id + '\nSend IMU/GPS';
-});
+onMounted(async () => {
+    if (typeof window === 'undefined') return;
 
-// Device motion for IMU
-window.addEventListener('devicemotion', (event) => {
-    if (event.acceleration && event.rotationRate) {
-        latestIMU.value = {
-            accel: [event.acceleration.x || 0, event.acceleration.y || 0, event.acceleration.z || 0],
-            gyro: [event.rotationRate.alpha || 0, event.rotationRate.beta || 0, event.rotationRate.gamma || 0],
-            ts: performance.now()
-        };
+    const PeerModule = await import('peerjs');
+    const Peer = PeerModule.default;
+    const peer = new Peer(peerId.value);
+
+    peer.on('open', (id: string) => {
+        status.value = 'ID: ' + id + '\nSend IMU/GPS';
+    });
+
+    window.addEventListener('devicemotion', (event) => {
+        if (event.acceleration && event.rotationRate) {
+            latestIMU.value = {
+                accel: [event.acceleration.x || 0, event.acceleration.y || 0, event.acceleration.z || 0],
+                gyro: [event.rotationRate.alpha || 0, event.rotationRate.beta || 0, event.rotationRate.gamma || 0],
+                ts: performance.now(),
+            };
+        }
+    });
+
+    if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+            (position) => {
+                latestGPS.value = {
+                    pos: [position.coords.latitude, position.coords.longitude, position.coords.altitude || 0],
+                    ts: performance.now(),
+                };
+            },
+            (error) => {
+                console.error('GPS error', error);
+            },
+            { enableHighAccuracy: true, maximumAge: 100, timeout: 5000 },
+        );
     }
-});
 
-// Geolocation for GPS
-if (navigator.geolocation) {
-    navigator.geolocation.watchPosition((position) => {
-        latestGPS.value = {
-            pos: [position.coords.latitude, position.coords.longitude, position.coords.altitude || 0],
-            ts: performance.now()
-        };
-    }, (error) => {
-        console.error('GPS error', error);
-    }, { enableHighAccuracy: true, maximumAge: 100, timeout: 5000 });
-}
+    peer.on('connection', (conn: any) => {
+        status.value += '\nPC Connected!';
 
-peer.on('connection', (conn) => {
-    status.value += '\nPC Connected!';
+        const loop = () => {
+            const motion = {
+                accel: latestIMU.value.accel,
+                gyro: latestIMU.value.gyro,
+                ts: latestIMU.value.ts,
+            };
 
-    const loop = () => {
-        const motion = {
-            accel: latestIMU.value.accel,
-            gyro: latestIMU.value.gyro,
-            ts: latestIMU.value.ts
+            if (conn.open) conn.send(motion);
+            requestAnimationFrame(loop);
         };
 
-        if (conn.open) conn.send(motion);
-
-        requestAnimationFrame(loop);
-    };
-
-    loop();
+        loop();
+    });
 });
 </script>
 

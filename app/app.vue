@@ -2,9 +2,11 @@
   setup
   lang="ts"
 >
+import { onMounted } from 'vue';
 import { useNavStore } from '~/composables/useNavStore';
 
-const { init } = useNavStore();
+const init = typeof window !== 'undefined' ? useNavStore().init : () => { };
+
 onMounted(init);
 </script>
 
