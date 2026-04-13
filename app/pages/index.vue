@@ -3,41 +3,33 @@
     lang="ts"
 >
 import { onMounted } from 'vue';
-import { useNavStore } from '~/composables/useNavStore';
-
-const store = useNavStore();
+import { useRouter } from 'vue-router';
 
 onMounted(() => {
     if (typeof window !== 'undefined') {
         const router = useRouter();
 
-        // Detect mobile and redirect to phone page
-        const ua = navigator.userAgent.toLowerCase();
-        const isMobileDevice = /iphone|ipad|ipod|android|mobile/.test(ua);
-
-        if (isMobileDevice) {
-            router.replace('/phone');
-        }
+        // Redirect to phone page - all calculations run locally
+        router.replace('/phone');
     }
 });
 </script>
 
 <template>
     <ClientOnly>
-        <div
-            v-if="store.deviceMode === 'pc'"
-            style="padding: 20px;"
-        >
-            <h1>🖥️ PC Navigation Center</h1>
-            <SensorPanel />
-            <NavVisualizer />
-            <MetricsHUD />
+        <div style="padding: 20px; color: white; text-align: center; margin-top: 60px;">
+            <h1>📱 Navigation Unit</h1>
+            <p>Redirecting to local navigation interface...</p>
         </div>
     </ClientOnly>
 </template>
 
 <style scoped>
 h1 {
-    color: white;
+    color: #0f0;
+}
+
+p {
+    color: #aaa;
 }
 </style>

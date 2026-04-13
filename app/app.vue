@@ -2,31 +2,20 @@
   setup
   lang="ts"
 >
-import { onMounted } from 'vue';
-import { useNavStore } from '~/composables/useNavStore';
+import { onMounted, ref } from 'vue';
 
-const store = useNavStore();
-const isMobileDevice = ref(false);
+const appReady = ref(false);
 
-onMounted(async () => {
-  if (typeof window !== 'undefined') {
-    // Detect if mobile device
-    const ua = navigator.userAgent.toLowerCase();
-    isMobileDevice.value = /iphone|ipad|ipod|android|mobile/.test(ua);
-
-    // Set device mode
-    if (isMobileDevice.value) {
-      store.deviceMode = 'phone';
-    } else {
-      store.deviceMode = 'pc';
-      store.init();
-    }
-  }
+onMounted(() => {
+  appReady.value = true;
 });
 </script>
 
 <template>
-  <ClientOnly fallback="Loading 3D + WebRTC...">
+  <ClientOnly
+    v-if="appReady"
+    fallback="Loading Navigation Unit..."
+  >
     <NuxtPage />
   </ClientOnly>
 </template>

@@ -2,46 +2,58 @@
     setup
     lang="ts"
 >
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, computed } from 'vue';
+import { AEKFFilter } from '~/core/aekf';
+import type { IMUData, StateVector } from '~/types';
 
-const peerId = ref('sensor-phone-' + Math.random().toString(36).substr(2, 9));
-const status = ref('Waiting PC...');
-const latestIMU = ref({ accel: [0, 0, 0], gyro: [0, 0, 0], ts: 0 });
-const latestGPS = ref({ pos: [0, 0, 0], ts: 0 });
-const pendingConnection = ref<any>(null);
-const connectedPcId = ref('');
+// Refs for UI
+const status = ref('Initializing...');
 const gyroGranted = ref(false);
 const geoGranted = ref(false);
+
+// Sensor data
+const latestIMU = ref<IMUData>({ accel: [0, 0, 0], gyro: [0, 0, 0], ts: 0 });
+const latestGPS = ref({ pos: [0, 0, 0], ts: 0 });
+
+// Filter & calculations
+const filter = ref<AEKFFilter | null>(null);
+const xest = ref<StateVector>({
+    pos: [0, 0, 0],
+    vel: [0, 0, 0],
+    att: [0, 0, 0],
+    biasAcc: [0, 0, 0],
+    biasGyro: [0, 0, 0],
+});
+const trajectory = ref<number[][]>([]);
+const frameCount = ref(0);
+const lastFrameTime = ref(performance.now());
+const fps = computed(() => {
+    const now = performance.now();
+    const delta = now - lastFrameTime.value;
+    return delta > 0 ? (1000 / delta).toFixed(1) : '0';
+});
+const rmse = computed(() => {
+    if (trajectory.value.length < 2) return 0;
+    let sum = 0;
+    for (const pos of trajectory.value) {
+        if (pos && pos[0] !== undefined && pos[1] !== undefined && pos[2] !== undefined) {
+            sum += pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2];
+        }
+    }
+    return Math.sqrt(sum / trajectory.value.length).toFixed(3);
+});
 
 onMounted(async () => {
     if (typeof window === 'undefined') return;
 
-    const PeerModule = await import('peerjs');
-    const Peer = PeerModule.default;
-    const peer = new Peer(peerId.value, {
-        host: '192.168.0.46',  // ← Тот же PC IP!
-        port: 9000,
-        path: '/',
-        debug: 2,
-        secure: true, // ← HTTP, НЕ wss!
-        config: {
-            iceServers: [
-                // ← Обязательно для local!
-                { urls: 'stun:stun.l.google.com:19302' },
-            ],
-        },
-    });
+    // Initialize EKF filter
+    const Q = Array.from({ length: 15 }, () => Array(15).fill(0.01));
+    const R = Array.from({ length: 3 }, () => Array(3).fill(0.1));
+    filter.value = new AEKFFilter(0.01, Q, R);
 
-    peer.on('open', (id: string) => {
-        status.value = 'Ready for connection';
-        console.log('Phone Peer initialized:', id);
-    });
+    status.value = 'Ready - processing locally';
 
-    peer.on('error', (err: any) => {
-        console.error('Phone Peer error:', err);
-        status.value = 'Peer Error: ' + err.type;
-    });
-
+    // Capture IMU data
     window.addEventListener('devicemotion', (event) => {
         if (event.acceleration && event.rotationRate) {
             latestIMU.value = {
@@ -49,69 +61,25 @@ onMounted(async () => {
                 gyro: [event.rotationRate.alpha || 0, event.rotationRate.beta || 0, event.rotationRate.gamma || 0],
                 ts: performance.now(),
             };
+
+            // Process through filter
+            if (filter.value && gyroGranted.value) {
+                const result = filter.value.predict(latestIMU.value);
+                xest.value.pos = result.xpred.slice(0, 3) as [number, number, number];
+                xest.value.vel = result.xpred.slice(3, 6) as [number, number, number];
+                xest.value.att = result.xpred.slice(6, 9) as [number, number, number];
+                xest.value.biasAcc = result.xpred.slice(9, 12) as [number, number, number];
+                xest.value.biasGyro = result.xpred.slice(12, 15) as [number, number, number];
+
+                trajectory.value.push([...xest.value.pos]);
+                if (trajectory.value.length > 2000) trajectory.value.shift();
+
+                frameCount.value++;
+                lastFrameTime.value = performance.now();
+            }
         }
     });
-
-    // Note: Geolocation is now requested via button to avoid permission denials
-
-    peer.on('connection', (conn: any) => {
-        console.log('Incoming connection from PC:', conn.peer);
-        pendingConnection.value = conn;
-        status.value = 'PC Requesting connection...';
-
-        conn.on('close', () => {
-            console.log('Connection closed');
-            connectedPcId.value = '';
-            status.value = 'Ready for connection';
-        });
-
-        conn.on('error', (err: any) => {
-            console.error('Connection error:', err);
-            status.value = 'Connection Error';
-        });
-    });
 });
-
-const authorize = () => {
-    if (pendingConnection.value) {
-        pendingConnection.value.on('open', () => {
-            status.value = 'Connected to PC';
-            connectedPcId.value = pendingConnection.value.peer;
-
-            const loop = () => {
-                const motion = {
-                    accel: latestIMU.value.accel,
-                    gyro: latestIMU.value.gyro,
-                    ts: latestIMU.value.ts,
-                };
-
-                if (pendingConnection.value?.open) {
-                    pendingConnection.value.send(motion);
-                }
-                requestAnimationFrame(loop);
-            };
-
-            loop();
-        });
-        pendingConnection.value = null;
-    }
-};
-
-const reject = () => {
-    if (pendingConnection.value) {
-        pendingConnection.value.close();
-        pendingConnection.value = null;
-        status.value = 'Connection rejected';
-    }
-};
-
-const copyId = () => {
-    navigator.clipboard.writeText(peerId.value);
-    status.value = 'ID copied!';
-    setTimeout(() => {
-        status.value = 'Ready for connection';
-    }, 2000);
-};
 
 const requestGyroPermission = async () => {
     try {
@@ -155,7 +123,7 @@ const requestGeoPermission = async () => {
                 };
                 status.value = `✓ GPS OK: ${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)} | accuracy: ${position.coords.accuracy}m`;
 
-                // WiFi fallback watch (быстрые обновления)
+                // WiFi fallback watch
                 navigator.geolocation.watchPosition(
                     (pos) => {
                         latestGPS.value = {
@@ -165,15 +133,14 @@ const requestGeoPermission = async () => {
                     },
                     (err) => console.log('Watch timeout OK (normal indoor)'),
                     {
-                        enableHighAccuracy: false,  // WiFi/Network fallback
-                        timeout: 30000,             // 30s
-                        maximumAge: 10000           // Кэш 10s
+                        enableHighAccuracy: false,
+                        timeout: 30000,
+                        maximumAge: 10000
                     }
                 );
             },
             (error) => {
                 console.error('GPS error:', error.code, error.message);
-                // Fallback: Network location (WiFi)
                 status.value = '📶 Using WiFi location...';
                 navigator.geolocation.getCurrentPosition(
                     (pos) => {
@@ -185,7 +152,7 @@ const requestGeoPermission = async () => {
                         status.value = '⚠️ No GPS/WiFi - outdoors recommended';
                     },
                     {
-                        enableHighAccuracy: false,  // WiFi + cell towers
+                        enableHighAccuracy: false,
                         timeout: 30000,
                         maximumAge: 60000
                     }
@@ -193,18 +160,20 @@ const requestGeoPermission = async () => {
             },
             {
                 enableHighAccuracy: true,
-                timeout: 45000,          // 45 сек на GPS fix
-                maximumAge: 30000        // Кэш 30 сек
+                timeout: 45000,
+                maximumAge: 30000
             }
         );
     } catch (error) {
         status.value = '✗ GPS failed';
     }
 };
+
 onMounted(() => {
     requestGyroPermission();
     requestGeoPermission();
-})
+});
+
 </script>
 
 
@@ -212,19 +181,9 @@ onMounted(() => {
     <ClientOnly>
         <div
             id="phone-container"
-            style="font-family: monospace; padding: 20px; background: #222; color: #0f0; min-height: 100vh;"
+            style="font-family: monospace; padding: 20px; background: #222; color: #0f0; min-height: 100vh; overflow-y: auto;"
         >
-            <h2>📱 Sensor Phone</h2>
-            <div style="margin: 20px 0; padding: 10px; background: #111; border: 1px solid #0f0;">
-                <strong>Your ID:</strong><br>
-                <code>{{ peerId }}</code>
-                <button
-                    @click="copyId"
-                    style="margin-left: 10px; padding: 5px 10px; background: #0f0; color: #000; border: none; cursor: pointer;"
-                >
-                    Copy
-                </button>
-            </div>
+            <h2>📱 Navigation Unit (Local Processing)</h2>
 
             <div style="margin: 20px 0; padding: 10px; background: #111; border: 1px solid #0f0;">
                 <strong>Status:</strong> {{ status }}
@@ -259,37 +218,41 @@ onMounted(() => {
                 </div>
             </div>
 
-            <div
-                v-if="pendingConnection"
-                style="margin: 20px 0; padding: 15px; background: #1a1a1a; border: 2px solid #ff0;"
-            >
-                <strong>⚠️ PC is requesting a connection!</strong>
-                <div style="margin-top: 10px;">
-                    <button
-                        @click="authorize"
-                        style="margin-right: 10px; padding: 8px 16px; background: #0f0; color: #000; border: none; cursor: pointer; font-weight: bold;"
-                    >
-                        ✓ Authorize
-                    </button>
-                    <button
-                        @click="reject"
-                        style="padding: 8px 16px; background: #f00; color: #fff; border: none; cursor: pointer; font-weight: bold;"
-                    >
-                        ✗ Reject
-                    </button>
+            <!-- Metrics HUD -->
+            <div style="margin: 20px 0; padding: 15px; background: #0a2a0a; border: 2px solid #0f0;">
+                <strong>📊 Live Metrics:</strong>
+                <div style="margin-top: 10px; font-size: 14px;">
+                    <div>FPS: <span style="color: #ffff00;">{{ fps }}</span></div>
+                    <div>Trajectory Points: <span style="color: #ffff00;">{{ trajectory.length }}</span></div>
+                    <div>RMSE: <span style="color: #ffff00;">{{ rmse }} m</span></div>
                 </div>
             </div>
 
-            <div
-                v-if="connectedPcId"
-                style="margin: 20px 0; padding: 10px; background: #001a00; border: 1px solid #0f0;"
-            >
-                <strong>Connected to PC:</strong> {{ connectedPcId }}<br>
-                📡 Streaming sensor data...
+            <!-- State Vector -->
+            <div style="margin: 20px 0; padding: 15px; background: #0a0a2a; border: 1px solid #0099ff;">
+                <strong>🧭 Estimated State (15-DOF EKF):</strong>
+                <div style="margin-top: 10px; font-size: 12px; line-height: 1.8;">
+                    <strong style="color: #ffff00;">Position [m]:</strong><br>
+                    X: {{ xest.pos[0].toFixed(4) }} | Y: {{ xest.pos[1].toFixed(4) }} | Z: {{ xest.pos[2].toFixed(4)
+                    }}<br><br>
+                    <strong style="color: #ffff00;">Velocity [m/s]:</strong><br>
+                    X: {{ xest.vel[0].toFixed(4) }} | Y: {{ xest.vel[1].toFixed(4) }} | Z: {{ xest.vel[2].toFixed(4)
+                    }}<br><br>
+                    <strong style="color: #ffff00;">Attitude [rad]:</strong><br>
+                    Roll: {{ xest.att[0].toFixed(4) }} | Pitch: {{ xest.att[1].toFixed(4) }} | Yaw: {{
+                        xest.att[2].toFixed(4) }}<br><br>
+                    <strong style="color: #ffff00;">Accel Bias [m/s²]:</strong><br>
+                    X: {{ xest.biasAcc[0].toFixed(4) }} | Y: {{ xest.biasAcc[1].toFixed(4) }} | Z: {{
+                        xest.biasAcc[2].toFixed(4) }}<br><br>
+                    <strong style="color: #ffff00;">Gyro Bias [rad/s]:</strong><br>
+                    X: {{ xest.biasGyro[0].toFixed(4) }} | Y: {{ xest.biasGyro[1].toFixed(4) }} | Z: {{
+                        xest.biasGyro[2].toFixed(4) }}
+                </div>
             </div>
 
+            <!-- Raw Sensor Data -->
             <div style="margin-top: 40px; padding: 10px; background: #111; font-size: 12px;">
-                <strong>📊 Sensor Data:</strong><br><br>
+                <strong>📊 Raw Sensor Data:</strong><br><br>
                 <strong>IMU (Accel + Gyro):</strong><br>
                 <span :style="{ color: gyroGranted ? '#0f0' : '#888' }">
                     Accel: {{latestIMU.accel.map(x => x.toFixed(2)).join(', ')}} m/s²<br>
@@ -301,6 +264,22 @@ onMounted(() => {
                     Lon: {{ latestGPS.pos?.[1]?.toFixed(5) || '0.00000' }}<br>
                     Alt: {{ latestGPS.pos?.[2]?.toFixed(2) || '0.00' }} m
                 </span>
+            </div>
+
+            <!-- Trajectory Preview -->
+            <div
+                style="margin-top: 30px; padding: 10px; background: #111; font-size: 11px; max-height: 200px; overflow-y: auto;">
+                <strong>📍 Trajectory (last 10 points):</strong><br>
+                <div
+                    v-for="(point, idx) in trajectory.slice(-10)"
+                    :key="idx"
+                    style="color: #0ff;"
+                >
+                    {{ (trajectory.length - 10 + idx).toString().padStart(4, ' ') }}:
+                    [{{ point && point[0] !== undefined ? point[0].toFixed(3) : '0.000' }}, {{ point && point[1] !==
+                        undefined ? point[1].toFixed(3) : '0.000' }}, {{ point && point[2] !== undefined ?
+                        point[2].toFixed(3) : '0.000' }}]
+                </div>
             </div>
         </div>
     </ClientOnly>

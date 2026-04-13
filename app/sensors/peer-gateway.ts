@@ -17,7 +17,7 @@ export class SensorGateway {
 				port: 9000, // ← peerjs --port 9000
 				path: '/',
 				debug: 2,
-				secure: true, // ← HTTP, НЕ wss!
+				secure: true,
 				config: {
 					iceServers: [
 						// ← Обязательно для local!

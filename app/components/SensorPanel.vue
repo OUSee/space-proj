@@ -3,31 +3,17 @@
     lang="ts"
 >
 import { ref } from 'vue';
-import { useNavStore } from '~/composables/useNavStore';
 
-const { connectPhone } = useNavStore();
-const phoneId = ref('');
-const status = ref('Disconnected');
-
-const connect = async () => {
-    try {
-        await connectPhone(phoneId.value);
-        status.value = 'Connected!';
-    } catch (error) {
-        status.value = 'Connection failed';
-    }
-};
+const status = ref('Phone runs calculations locally - no PC connection needed');
 </script>
 
 <template>
     <div>
-        <input
-            style="background-color: grey;"
-            v-model="phoneId"
-            placeholder="Phone ID"
-        />
-        <button @click="connect">Connect</button>
-        <div style="margin-top: 20px;">{{ status }}</div>
+        <h3>📱 Navigation Unit (Local Processing)</h3>
+        <div style="margin-top: 20px; padding: 15px; background: #0a2a0a; border: 1px solid #0f0;">
+            <strong style="color: #0f0;">Status:</strong> {{ status }}
+        </div>
+        <p>All sensor calculations now run directly on the phone. No PC connection required.</p>
     </div>
 </template>
 
@@ -39,8 +25,12 @@ const connect = async () => {
     color: white;
 }
 
-button {
-    background-color: black;
-    border: 1px solid lightgreen;
+h3 {
+    color: #0f0;
+}
+
+p {
+    color: #aaa;
+    font-size: 12px;
 }
 </style>

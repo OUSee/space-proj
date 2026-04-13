@@ -1,14 +1,12 @@
-// # Pinia-like store (xest, Pk, EKF)
+// # Pinia-like store (xest, Pk, EKF) - Phone-only mode
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { AEKFFilter } from '~/core/aekf';
-import { SensorGateway } from '~/sensors/peer-gateway';
 import type { StateVector, IMUData } from '~/types';
 
 export const useNavStore = defineStore('nav', () => {
-	const deviceMode = ref<'pc' | 'phone'>('pc');
+	const deviceMode = ref<'pc' | 'phone'>('phone');
 	const filter = ref<AEKFFilter>();
-	const gateway = ref<SensorGateway>();
 	const xest = ref<StateVector>({
 		pos: [0, 0, 0],
 		vel: [0, 0, 0],
@@ -18,41 +16,59 @@ export const useNavStore = defineStore('nav', () => {
 	});
 	const trajectory = ref<number[][]>([]);
 	const rmse = computed(() => {
-		// Placeholder: calculate RMSE from trajectory
-		return 0.5; // example
+		if (trajectory.value.length < 2) return 0;
+		let sum = 0;
+		for (const pos of trajectory.value) {
+			if (
+				pos &&
+				pos[0] !== undefined &&
+				pos[1] !== undefined &&
+				pos[2] !== undefined
+			) {
+				sum += pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2];
+			}
+		}
+		return Math.sqrt(sum / trajectory.value.length);
 	});
 	const chi2 = computed(() => {
 		// Placeholder: from filter residuals
 		return 1.2;
 	});
 	const fps = ref(0);
+
 	const init = () => {
-		// Only initialize AEKF on PC mode
-		if (deviceMode.value === 'pc') {
-			// Placeholder covariances: Q 15x15, R 3x3
-			const Q = Array.from({ length: 15 }, () => Array(15).fill(0.1));
-			const R = Array.from({ length: 3 }, () => Array(3).fill(0.1));
-			filter.value = new AEKFFilter(0.01, Q, R);
-		}
+		// Initialize AEKF filter for phone mode (all calculations local)
+		const Q = Array.from({ length: 15 }, () => Array(15).fill(0.01));
+		const R = Array.from({ length: 3 }, () => Array(3).fill(0.1));
+		filter.value = new AEKFFilter(0.01, Q, R);
 	};
-	const connectPhone = async (id: string) => {
-		if (!id) throw new Error('Invalid phone ID');
-		if (!gateway.value) gateway.value = new SensorGateway();
-		await gateway.value.connect(id, feedIMU);
-	};
+
 	const feedIMU = (imu: IMUData) => {
-		// Only process IMU on PC mode
-		if (deviceMode.value === 'pc' && filter.value) {
+		// Process IMU data through filter (local on phone)
+		if (filter.value) {
 			const pred = filter.value.predict(imu);
-			/* update xest */
-			trajectory.value.push(pred.xpred.slice(0, 3));
-			if (trajectory.value.length > 1000) trajectory.value.shift();
+			xest.value.pos = pred.xpred.slice(0, 3) as [number, number, number];
+			xest.value.vel = pred.xpred.slice(3, 6) as [number, number, number];
+			xest.value.att = pred.xpred.slice(6, 9) as [number, number, number];
+			xest.value.biasAcc = pred.xpred.slice(9, 12) as [
+				number,
+				number,
+				number,
+			];
+			xest.value.biasGyro = pred.xpred.slice(12, 15) as [
+				number,
+				number,
+				number,
+			];
+
+			trajectory.value.push([...xest.value.pos]);
+			if (trajectory.value.length > 2000) trajectory.value.shift();
 		}
 	};
+
 	return {
 		deviceMode,
 		init,
-		connectPhone,
 		feedIMU,
 		xest,
 		trajectory,
