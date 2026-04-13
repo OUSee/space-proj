@@ -6,6 +6,9 @@ export default defineNuxtConfig({
 	compatibilityDate: '2024-04-03', // Use a valid release date
 	devtools: { enabled: true },
 	ssr: false,
+	app: {
+		baseURL: '/space-proj/',
+	},
 	imports: { autoImport: true },
 
 	vite: {

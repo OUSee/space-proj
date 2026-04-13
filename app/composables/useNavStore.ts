@@ -28,8 +28,10 @@ export const useNavStore = defineStore('nav', () => {
 	const init = () => {
 		/* new AEKFFilter(0.01, Q, R) */
 	};
-	const connectPhone = async (id: string) =>
+	const connectPhone = async (id: string) => {
+		if (!id) throw new Error('Invalid phone ID');
 		await gateway.value.connect(id, feedIMU);
+	};
 	const feedIMU = (imu: IMUData) => {
 		const pred = filter.value!.predict(imu);
 		/* update xest */
