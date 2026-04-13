@@ -132,6 +132,9 @@ const requestGeoPermission = async () => {
             return;
         }
 
+        status.value = '🔄 Getting GPS fix...';
+
+        // 1. Сначала single position с LONG timeout
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 geoGranted.value = true;
@@ -139,29 +142,53 @@ const requestGeoPermission = async () => {
                     pos: [position.coords.latitude, position.coords.longitude, position.coords.altitude || 0],
                     ts: performance.now(),
                 };
-                status.value = '✓ GPS access granted!';
+                status.value = `✓ GPS OK: ${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)}`;
 
-                // Start watching
-                navigator.geolocation.watchPosition(
+                // 2. Только после успеха — watchPosition
+                const watchId = navigator.geolocation.watchPosition(
                     (pos) => {
                         latestGPS.value = {
                             pos: [pos.coords.latitude, pos.coords.longitude, pos.coords.altitude || 0],
                             ts: performance.now(),
                         };
+                        console.log('GPS update:', pos.coords.latitude.toFixed(5), pos.coords.longitude.toFixed(5));
                     },
-                    (err) => console.error('GPS error:', err),
-                    { enableHighAccuracy: true, maximumAge: 100, timeout: 5000 },
+                    (err) => {
+                        console.error('GPS watch error:', err);
+                        status.value = '⚠️ GPS timeout, retrying...';
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,        // 10 сек между обновлениями
+                        maximumAge: 5000       // Используй кэш до 5 сек
+                    }
                 );
+
+                // Cleanup через 30 сек если не нужно
+                setTimeout(() => {
+                    navigator.geolocation.clearWatch(watchId);
+                }, 30000);
+
             },
             (error) => {
-                console.error('GPS error:', error);
-                status.value = '✗ GPS access denied';
+                console.error('GPS error:', error.code, error.message);
+                let msg = '';
+                switch (error.code) {
+                    case error.PERMISSION_DENIED: msg = '✗ GPS permission denied'; break;
+                    case error.POSITION_UNAVAILABLE: msg = '✗ No GPS signal'; break;
+                    case error.TIMEOUT: msg = '⏱️ GPS timeout - no signal'; break;
+                }
+                status.value = msg;
             },
-            { enableHighAccuracy: true, timeout: 5000 },
+            {
+                enableHighAccuracy: true,
+                timeout: 15000,        // 15 сек на первый fix
+                maximumAge: 0          // Свежие данные
+            }
         );
     } catch (error) {
-        console.error('Geo permission error:', error);
-        status.value = '✗ GPS permission failed';
+        console.error('GPS error:', error);
+        status.value = '✗ GPS failed';
     }
 };
 </script>
@@ -204,7 +231,10 @@ const requestGeoPermission = async () => {
                         </button>
                     </div>
                     <div>
-                        <strong>GPS:</strong> <span :style="{ color: geoGranted ? '#0f0' : '#f00' }">{{ geoGranted ? '✓ ACTIVE' : '✗ INACTIVE' }}</span>
+                        <strong>GPS:</strong>
+                        <span :style="{ color: geoGranted ? '#0f0' : '#f00' }">
+                            {{ geoGranted ? '✓ ACTIVE' : '✗ INACTIVE' }}
+                        </span>
                         <button
                             @click="requestGeoPermission"
                             style="margin-left: 10px; padding: 5px 10px; background: #ff6600; color: #000; border: none; cursor: pointer; font-weight: bold;"
