@@ -17,6 +17,13 @@ export class SensorGateway {
 				port: 9000, // ← peerjs --port 9000
 				path: '/',
 				debug: 2,
+				secure: false, // ← HTTP, НЕ wss!
+				config: {
+					iceServers: [
+						// ← Обязательно для local!
+						{ urls: 'stun:stun.l.google.com:19302' },
+					],
+				},
 			});
 			p.on('open', (id: string) => {
 				console.log('Peer initialized with ID:', id);

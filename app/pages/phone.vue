@@ -22,7 +22,14 @@ onMounted(async () => {
         host: '192.168.0.46',  // ← Тот же PC IP!
         port: 9000,
         path: '/',
-        debug: 2
+        debug: 2,
+        secure: false, // ← HTTP, НЕ wss!
+        config: {
+            iceServers: [
+                // ← Обязательно для local!
+                { urls: 'stun:stun.l.google.com:19302' },
+            ],
+        },
     });
 
     peer.on('open', (id: string) => {
