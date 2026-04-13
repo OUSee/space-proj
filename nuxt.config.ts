@@ -25,11 +25,11 @@ export default defineNuxtConfig({
 	},
 
 	nitro: {
-		// prerender: {
-		// 	failOnError: false, // Игнорировать 500 errors в generate
-		// 	crawlLinks: false,
-		// 	routes: ['/phone'],
-		// },
+		prerender: {
+			failOnError: false,
+			crawlLinks: false,
+			routes: [],
+		},
 	},
 
 	vue: {
