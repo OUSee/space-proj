@@ -33,9 +33,8 @@ export default defineNuxtConfig({
 
 	nitro: {
 		prerender: {
-			failOnError: false,
+			routes: ['/nonexistent'],
 			crawlLinks: false,
-			routes: [],
 		},
 	},
 
