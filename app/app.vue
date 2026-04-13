@@ -63,14 +63,14 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div id="app">
-    <h1>Indoor Navigation AEKF Demo</h1>
-    <ClientOnly>
+  <ClientOnly>
+    <div id="app">
+      <h1>Indoor Navigation AEKF Demo</h1>
       <SensorPanel />
       <NavVisualizer />
       <MetricsHUD />
-    </ClientOnly>
-  </div>
+    </div>
+  </ClientOnly>
 </template>
 
 <style>
