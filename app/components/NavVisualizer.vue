@@ -29,7 +29,7 @@ onMounted(async () => {
     controls = new OrbitControls(camera, renderer.domElement);
     // Add phone model
     phone = new THREE.Group();
-    const phoneGeo = new THREE.BoxGeometry(0.15, 0.3, 0.02);
+    const phoneGeo = new THREE.BoxGeometry(1.55, 0.75, 0.08);
     const phoneMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
     const phoneMesh = new THREE.Mesh(phoneGeo, phoneMat);
 

@@ -1,12 +1,12 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
 	// 1. Register the PWA module here
-	modules: ['@pinia/nuxt', '@vite-pwa/nuxt'],
+	modules: ['@pinia/nuxt'],
 
 	compatibilityDate: '2024-04-03', // Use a valid release date
 	devtools: { enabled: true },
 	ssr: false,
-	imports: { autoImport: true, dirs: ['~/core', '~/sensors'] },
+	imports: { autoImport: true },
 
 	vite: {
 		build: {
@@ -26,6 +26,8 @@ export default defineNuxtConfig({
 
 	nitro: {
 		prerender: {
+			failOnError: false, // Игнорировать 500 errors в generate
+			crawlLinks: false,
 			routes: ['/phone'],
 		},
 	},
@@ -38,20 +40,16 @@ export default defineNuxtConfig({
 		inlineStyles: false, // основной фикс для новых версий (по умолчанию true)
 	},
 
-	css: ['~/assets/styles/index.scss'],
+	// css: ['~/assets/styles/index.scss'],
 
-	pwa: {
-		registerType: 'autoUpdate',
-		manifest: {
-			name: 'Indoor Navigation AEKF',
-			short_name: 'NavAEKF',
-			theme_color: '#ffffff',
-		},
-		workbox: {
-			navigateFallback: '/',
-		},
-		devOptions: {
-			enabled: true, // Useful for testing PWA locally
-		},
-	},
+	// vitepwa: {  // ← pwa → vitepwa
+	//   registerType: 'autoUpdate',
+	//   manifest: {
+	//     name: 'Indoor Navigation AEKF',
+	//     short_name: 'NavAEKF',
+	//     theme_color: '#ffffff'
+	//   },
+	//   workbox: { navigateFallback: '/' },
+	//   devOptions: { enabled: true }
+	// }
 });
