@@ -10,7 +10,15 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
+    "@pinia/nuxt": "^0.11.3",
+    "@types/three": "^0.183.1",
     "nuxt": "^4.4.2",
+    "peerjs": "^1.5.5",
+    "pinia": "^3.0.4",
+    "sass": "^1.99.0",
+    "three": "^0.183.2",
+    "three-stdlib": "^2.36.1",
+    "vite-plugin-pwa": "^1.2.0",
     "vue": "^3.5.32",
     "vue-router": "^5.0.4"
   },
@@ -18,6 +26,7 @@
   "devDependencies": {
     "@oxc-minify/binding-win32-x64-msvc": "^0.125.0",
     "@oxc-parser/binding-win32-x64-msvc": "^0.125.0",
-    "@oxc-transform/binding-win32-x64-msvc": "^0.125.0"
+    "@oxc-transform/binding-win32-x64-msvc": "^0.125.0",
+    "@vite-pwa/nuxt": "^1.1.1"
   }
 }
