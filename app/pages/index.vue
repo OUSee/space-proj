@@ -145,8 +145,18 @@ async function calibrateSensors(): Promise<void> {
                 resolve();
                 return;
             }
-            if (e.acceleration) {
-                accelSamples.push([e.acceleration.x || 0, e.acceleration.y || 0, e.acceleration.z || 0]);
+            if (e.accelerationIncludingGravity) {
+                accelSamples.push([
+                    e.accelerationIncludingGravity.x || 0,
+                    e.accelerationIncludingGravity.y || 0,
+                    e.accelerationIncludingGravity.z || 0
+                ]);
+            } else if (e.acceleration) {
+                accelSamples.push([
+                    e.acceleration.x || 0,
+                    e.acceleration.y || 0,
+                    e.acceleration.z || 0
+                ]);
             }
             if (e.rotationRate) {
                 const gyroRad = [
@@ -182,18 +192,34 @@ function initFilter() {
 // ----------------------------- IMU Event Handler -----------------------------
 let lastTimestamp = 0;
 
+const debugData = ref(null as null | {
+    acceleration: DeviceMotionEventAcceleration | null;
+    accelerationIncludingGravity: DeviceMotionEventAcceleration | null;
+    rotationRate: DeviceMotionEventRotationRate | null;
+    interval: number | null;
+    timestamp: number;
+});
+
 function handleDeviceMotion(event: DeviceMotionEvent) {
+    debugData.value = {
+        acceleration: event.acceleration,
+        accelerationIncludingGravity: event.accelerationIncludingGravity,
+        rotationRate: event.rotationRate,
+        interval: event.interval,
+        timestamp: performance.now()
+    };
+
     if (!filterInstance || !gyroGranted.value || isCalibrating.value) return;
 
     const now = performance.now();
     const dt = lastTimestamp ? Math.min(0.1, (now - lastTimestamp) / 1000) : 0.01;
     lastTimestamp = now;
 
-    // Raw readings
+    // Raw readings - use accelerationIncludingGravity for total accel (includes gravity)
     let accel: [number, number, number] = [
-        event.acceleration?.x ?? 0,
-        event.acceleration?.y ?? 0,
-        event.acceleration?.z ?? 0
+        (event.accelerationIncludingGravity?.x ?? event.acceleration?.x ?? 0),
+        (event.accelerationIncludingGravity?.y ?? event.acceleration?.y ?? 0),
+        (event.accelerationIncludingGravity?.z ?? event.acceleration?.z ?? 0)
     ];
     let gyro: [number, number, number] = [
         (event.rotationRate?.alpha ?? 0) * Math.PI / 180,
@@ -241,19 +267,39 @@ async function requestGyroPermission() {
             const permission = await (DeviceMotionEvent as any).requestPermission();
             if (permission === 'granted') {
                 gyroGranted.value = true;
-                status.value = 'Gyro access granted';
+                status.value = 'Gyro access granted - listener added';
                 window.addEventListener('devicemotion', handleDeviceMotion);
             } else {
                 status.value = 'Gyro access denied';
             }
         } else {
             gyroGranted.value = true;
-            status.value = 'Gyro access active (no permission needed)';
+            status.value = 'Gyro access active (no permission needed) - listener added';
             window.addEventListener('devicemotion', handleDeviceMotion);
         }
     } catch (error) {
         console.error(error);
         status.value = 'Gyro permission error';
+    }
+}
+
+async function requestGeoPermission() {
+    try {
+        // Trigger geolocation permission request
+        await navigator.geolocation.getCurrentPosition(
+            (position) => {
+                geoGranted.value = true;
+                status.value = `GPS access granted: ${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)}`;
+            },
+            (error) => {
+                geoGranted.value = false;
+                status.value = `GPS access denied: ${error.message}`;
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+        );
+    } catch (error) {
+        console.error(error);
+        status.value = 'GPS permission error';
     }
 }
 
@@ -279,6 +325,55 @@ const close3D = () => {
         if (canvas) container.removeChild(canvas);
     }
 };
+
+// ----------------------------- Simulation for Testing -----------------------------
+let simulateInterval: number | null = null;
+
+function startSimulation() {
+    if (simulateInterval) return;
+    status.value = 'Simulation started - fake sensor data';
+    gyroGranted.value = true;
+    geoGranted.value = true;
+
+    // Fake calibration
+    calibrationData.value = { accelMean: [0, 0, 9.81], gyroMean: [0, 0, 0] };
+    initFilter();
+
+    let time = 0;
+    simulateInterval = setInterval(() => {
+        time += 0.1;
+
+        // Fake sensor data
+        const fakeAccel = [0, 0, 9.81]; // gravity
+        const fakeGyro = [0.1 * Math.sin(time), 0.1 * Math.cos(time), 0]; // slow rotation
+
+        // Set debug data
+        debugData.value = {
+            acceleration: null,
+            accelerationIncludingGravity: { x: fakeAccel[0]!, y: fakeAccel[1]!, z: fakeAccel[2]! },
+            rotationRate: { alpha: fakeGyro[0]! * 180 / Math.PI, beta: fakeGyro[1]! * 180 / Math.PI, gamma: fakeGyro[2]! * 180 / Math.PI },
+            interval: 100,
+            timestamp: performance.now()
+        };
+
+        // Process as if event fired
+        handleDeviceMotion({
+            acceleration: null,
+            accelerationIncludingGravity: { x: fakeAccel[0], y: fakeAccel[1], z: fakeAccel[2] },
+            rotationRate: { alpha: fakeGyro[0]! * 180 / Math.PI, beta: fakeGyro[1]! * 180 / Math.PI, gamma: fakeGyro[2]! * 180 / Math.PI },
+            interval: 100
+        } as DeviceMotionEvent);
+
+    }, 100);
+}
+
+function stopSimulation() {
+    if (simulateInterval) {
+        clearInterval(simulateInterval);
+        simulateInterval = null;
+        status.value = 'Simulation stopped';
+    }
+}
 
 // ----------------------------- Three.js Scene -----------------------------
 const initThreeScene = (THREEModule: any) => {
@@ -317,7 +412,7 @@ const initThreeScene = (THREEModule: any) => {
     scene.add(axesHelper);
 
     // Phone model (0.075 x 0.155 x 0.008 m)
-    const geometry = new THREE.BoxGeometry(0.075, 0.155, 0.008);
+    const geometry = new THREE.BoxGeometry(0.075, 0.008, 0.155);
     const material = new THREE.MeshStandardMaterial({ color: 0x3a86ff, metalness: 0.7, roughness: 0.3 });
     const phone = new THREE.Mesh(geometry, material);
     phone.castShadow = true;
@@ -343,30 +438,93 @@ const initThreeScene = (THREEModule: any) => {
     const animate = () => {
         requestAnimationFrame(animate);
 
+        // const pos = xest.value.pos;
+        // const att = xest.value.att;
+        // phone.position.set(pos[0], pos[1], pos[2]);
+        // phone.rotation.set(att[0], att[1], att[2], 'XYZ');
+
+        // // Update trail
+        // const currentPos = new THREE.Vector3(pos[0], pos[1], pos[2]);
+        // if (trailPoints.length === 0 || currentPos.distanceTo(lastPos) > 0.005) {
+        //     trailPoints.push(currentPos.clone());
+        //     if (trailPoints.length > 200) trailPoints.shift();
+        //     const positions = trailPoints.flatMap(p => [p.x, p.y, p.z]);
+        //     trailLine.geometry.dispose();
+        //     trailLine.geometry = new THREE.BufferGeometry();
+        //     trailLine.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+
+        //     particleGeo.dispose();
+        //     const particlePositions = trailPoints.flatMap(p => [p.x, p.y, p.z]);
+        //     particleGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(particlePositions), 3));
+        //     lastPos.copy(currentPos);
+        // }
+
+        // // Camera follow (third-person relative to phone orientation)
+        // const offset = new THREE.Vector3(-0.5, 0.3, 0.8);
+        // offset.applyQuaternion(phone.quaternion);
+        // camera.position.copy(phone.position.clone().add(offset));
+        // camera.lookAt(phone.position);
+
+        // renderer.render(scene, camera);
+
+        const accel = debugData.value?.accelerationIncludingGravity;
+        if (accel) {
+            const [ax, ay, az] = [accel.x ?? 0, accel.y ?? 0, accel.z ?? 0];
+
+            // 9.81 – гравитация; если ты поднимаешь телефон, az < 9.81
+            const lift = (9.81 - az) * 0.01; // 0.01 – коэффициент для демки
+
+            const MAX_HEIGHT = 0.2; // 20 см
+            const boxMin = -MAX_HEIGHT / 2;
+            const boxMax = MAX_HEIGHT / 2;
+
+            let z = phone.position.z;
+            z += lift;
+            z = Math.max(boxMin, Math.min(boxMax, z)); // ограничение в 20 см
+            phone.position.z = z;
+        }
+
+        // Поворот берём из EKF
+        // const att = xest.value.att;
+        // phone.rotation.set(att[0], att[1], att[2], 'XYZ');
+
+        // 1. Визуализация вращения телефона напрямую по gyro
+        const gyro = debugData.value?.rotationRate;
+        if (gyro) {
+            const dr = [
+                (gyro.alpha || 0) * Math.PI / 180,
+                (gyro.beta || 0) * Math.PI / 180,
+                (gyro.gamma || 0) * Math.PI / 180
+            ];
+
+            phone.rotation.x += dr[0]! * 0.01; // 0.1 — коэффициент чувствительности
+            phone.rotation.y += dr[1]! * 0.01;
+            phone.rotation.z += dr[2]! * 0.01;
+        }
+
+        // 2. Твоя трасса (trail), но с минимальным порогом
         const pos = xest.value.pos;
         const att = xest.value.att;
-        phone.position.set(pos[0], pos[1], pos[2]);
-        phone.rotation.set(att[0], att[1], att[2], 'XYZ');
 
-        // Update trail
+        phone.position.set(pos[0], pos[1], pos[2]);
+        // phone.rotation.set(att[0], att[1], att[2], 'XYZ'); // пока можно закомментировать
+
         const currentPos = new THREE.Vector3(pos[0], pos[1], pos[2]);
-        if (trailPoints.length === 0 || currentPos.distanceTo(lastPos) > 0.02) {
+        if (trailPoints.length === 0 || currentPos.distanceTo(lastPos) > 0.005) {
             trailPoints.push(currentPos.clone());
             if (trailPoints.length > 200) trailPoints.shift();
             const positions = trailPoints.flatMap(p => [p.x, p.y, p.z]);
             trailLine.geometry.dispose();
             trailLine.geometry = new THREE.BufferGeometry();
             trailLine.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-
             particleGeo.dispose();
             const particlePositions = trailPoints.flatMap(p => [p.x, p.y, p.z]);
             particleGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(particlePositions), 3));
             lastPos.copy(currentPos);
         }
 
-        // Camera follow (third-person relative to phone orientation)
-        const offset = new THREE.Vector3(-0.5, 0.3, 0.8);
-        offset.applyQuaternion(phone.quaternion);
+        const offset = new THREE.Vector3(-0.3, 0.2, 0.6);
+        // offset.applyQuaternion(phone.quaternion);
         camera.position.copy(phone.position.clone().add(offset));
         camera.lookAt(phone.position);
 
@@ -379,6 +537,189 @@ const initThreeScene = (THREEModule: any) => {
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
+};
+
+// ----------------------------- Rough 3D Demo (RAW DATA ONLY) -----------------------------
+const roughDemoPhonePos = ref({ x: 0, y: 0, z: 0 });
+const roughDemoPhoneRot = ref({ x: 0, y: 0, z: 0 });
+
+let roughDemoInstance: {
+    animate: () => void;
+    dispose: () => void;
+} | null = null;
+
+const initRoughThreeScene = (THREEModule: any) => {
+
+    const container = document.getElementById('three-container');
+    if (!container) return null;
+
+    const THREE = THREEModule.default || THREEModule;
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111122);
+    scene.fog = new THREE.FogExp2(0x111122, 0.008);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0x404060);
+    scene.add(ambientLight);
+    const mainLight = new THREE.DirectionalLight(0xffffff, 1);
+    mainLight.position.set(2, 5, 3);
+    mainLight.castShadow = true;
+    scene.add(mainLight);
+    const fillLight = new THREE.PointLight(0x4466cc, 0.3);
+    fillLight.position.set(-1, 2, 2);
+    scene.add(fillLight);
+
+    // Ground grid
+    const gridHelper = new THREE.GridHelper(30, 20, 0x88aaff, 0x335588);
+    gridHelper.position.y = -0.01;
+    scene.add(gridHelper);
+
+    // Axes helper
+    const axesHelper = new THREE.AxesHelper(5);
+    scene.add(axesHelper);
+
+    // Phone model (0.075 x 0.155 x 0.008 m)
+    const geometry = new THREE.BoxGeometry(0.075, 0.008, 0.155); // X, Y, Z — как экран вверх
+    const material = new THREE.MeshStandardMaterial({ color: 0x3a86ff, metalness: 0.7, roughness: 0.3 });
+    const phone = new THREE.Mesh(geometry, material);
+    phone.castShadow = true;
+
+    // НАЧАЛЬНОЕ ПОЛОЖЕНИЕ: лежит на столе, экран вверх
+    phone.rotation.x = -Math.PI / 2; // поворот на 90° вокруг X, чтобы экран лежал горизонтально
+    scene.add(phone);
+
+    // White edges
+    const edgesGeo = new THREE.EdgesGeometry(geometry);
+    const edgesMat = new THREE.LineBasicMaterial({ color: 0xffffff });
+    const wireframe = new THREE.LineSegments(edgesGeo, edgesMat);
+    phone.add(wireframe);
+
+    // Trail for raw‑demo only (optional)
+    const trailPoints: any[] = [];
+    const trailLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffff00 }));
+    scene.add(trailLine);
+    const particleGeo = new THREE.BufferGeometry();
+    const particleMat = new THREE.PointsMaterial({ color: 0xffff00, size: 0.03 });
+    const particles = new THREE.Points(particleGeo, particleMat);
+    scene.add(particles);
+
+    let lastPos = new THREE.Vector3();
+
+    // Вращение и подъём в ящике 20 см
+    const MAX_HEIGHT = 0.2; // 20 см
+    const boxMin = -MAX_HEIGHT / 2;
+    const boxMax = MAX_HEIGHT / 2;
+    const LIFT_K = 0.01;   // коэффициент для подъёма
+    const ROT_K = 0.01;   // коэффициент для вращения (0.005–0.02)
+
+    const deviceOrientationQuat = new THREE.Quaternion();
+    let verticalVelocity = 0
+
+
+    const animate = () => {
+        requestAnimationFrame(animate);
+
+        const accel = debugData.value?.accelerationIncludingGravity;
+        const gyro = debugData.value?.rotationRate;
+
+        // 1. ЧИСТОЕ ВРАЩЕНИЕ (no accumulate, no x/y/z += dr)
+
+        if (gyro) {
+            const dt = 1 / 60; // ~60 FPS, можно заменить на real deltaTime
+
+            const alpha = (gyro.alpha || 0) * Math.PI / 180; // yaw
+            const beta = (gyro.beta || 0) * Math.PI / 180; // pitch
+            const gamma = (gyro.gamma || 0) * Math.PI / 180; // roll
+
+            // Вращательная скорость (угловая скорость) в радианах/сек
+            const omega = new THREE.Vector3(alpha, gamma, -beta); // порядок YXZ, как ты хотел
+
+            const angle = omega.length();
+            let qDelta = new THREE.Quaternion();
+            if (angle > 1e-6) {
+                const axis = omega.clone().normalize();
+                qDelta.setFromAxisAngle(axis, angle * dt);
+            }
+
+            deviceOrientationQuat.multiply(qDelta);
+
+            phone.quaternion.copy(deviceOrientationQuat);
+
+            // Девайс: beta → pitch (вперёд/назад), gamma → roll (влево/вправо), alpha → yaw
+            // const euler = new THREE.Euler(beta, gamma, alpha, "YXZ");
+            // const quaternion = new THREE.Quaternion().setFromEuler(euler);
+            // phone.quaternion.copy(quaternion);
+
+            // Дополнительно, если ты хочешь, чтобы в начале экран был вверх (как на столе):
+        }
+
+        // 2. ДЕМО‑ДРЕЙФ ВЕРТИКАЛЬНО (UP/DOWN only, no forward motion)
+        if (accel) {
+            // Нормальные значения: примерно ±9.81 по Z, когда экран вверх/вниз
+            const ay = accel.z ?? 0; // платформозависимо, иногда y
+
+            // Не вычитаем гравитацию, просто “ускорение вверх/вниз”
+            const effectiveUpAccel = -ay; // поменяй знак, если летит вверх, а не вниз
+
+            const maxVel = 0.5;
+            const friction = 0.1;
+
+            verticalVelocity += effectiveUpAccel * 0.001;
+            verticalVelocity *= 1 - friction;
+            verticalVelocity = Math.max(-maxVel, Math.min(maxVel, verticalVelocity));
+
+            let y = phone.position.y;
+            y += verticalVelocity;
+            y = Math.max(0, y); // не уходить под пол
+
+            let x = phone.position.x;
+            let z = phone.position.z;
+
+            x += (accel.x ?? 0) * 0.005;
+            z += (accel.y ?? 0) * 0.005; // или accel.z, зависит от ориентации
+
+            phone.position.set(x, y, z);
+        }
+
+        // 3. Камера
+        const offset = new THREE.Vector3(-0.5, 0.3, 0.8);
+        // offset.applyQuaternion(phone.quaternion);
+        camera.position.copy(phone.position.clone().add(offset));
+        camera.lookAt(phone.position);
+
+        renderer.render(scene, camera);
+    };
+    animate();
+
+    const dispose = () => {
+        window.cancelAnimationFrame(animate as any);
+        if (container.children[0]) {
+            container.removeChild(renderer.domElement);
+        }
+    };
+
+    return { animate, dispose };
+};
+
+const startRoughDemo = async () => {
+    if (!gyroGranted.value) {
+        status.value = 'Please enable gyro first.';
+        return;
+    }
+
+    status.value = 'Starting Rough 3D Demo (raw data only)…';
+    show3D.value = true;
+    const THREE = await import('three');
+
+    // Передаём new THREE.Scene() и THREE в функцию
+    const inst = initRoughThreeScene(THREE);
+    roughDemoInstance = inst;
 };
 
 // ----------------------------- Lifecycle -----------------------------
@@ -411,7 +752,29 @@ onMounted(() => {
                     Start 3D Demonstration
                 </button>
                 <button
+                    v-if="!simulateInterval"
+                    @click="startSimulation"
+                    style="padding: 12px 30px; background: #00ffff; color: #000; border: none; cursor: pointer; font-weight: bold; font-size: 16px; border-radius: 5px; margin-left: 10px;"
+                >
+                    Simulate Sensors
+                </button>
+                <!-- НОВАЯ ТРЕТЬЯ КНОПКА — “ROUGH DEMO” -->
+                <button
+                    v-if="!show3D && !simulateInterval"
+                    @click="startRoughDemo"
+                    style="padding: 12px 30px; background: #ff9900; color: #000; border: none; cursor: pointer; font-weight: bold; font-size: 16px; border-radius: 5px; margin-left: 10px;"
+                >
+                    Start Rough 3D Demo (Raw Data)
+                </button>
+                <button
                     v-else
+                    @click="stopSimulation"
+                    style="padding: 12px 30px; background: #ff00ff; color: #000; border: none; cursor: pointer; font-weight: bold; font-size: 16px; border-radius: 5px; margin-left: 10px;"
+                >
+                    Stop Simulation
+                </button>
+                <button
+                    v-if="show3D"
                     @click="close3D"
                     style="padding: 12px 30px; background: #ff6600; color: #000; border: none; cursor: pointer; font-weight: bold; font-size: 16px; border-radius: 5px;"
                 >
@@ -455,7 +818,7 @@ onMounted(() => {
                 <p style="margin: 0;">Att(rad): [{{ xest.att[0].toFixed(2) }}, {{ xest.att[1].toFixed(2) }}, {{
                     xest.att[2].toFixed(2) }}]</p>
                 <p style="margin: 0;">Bias Acc(m/s²): [{{ xest.biasAcc[0].toFixed(2) }}, {{ xest.biasAcc[1].toFixed(2)
-                    }}, {{
+                }}, {{
                         xest.biasAcc[2].toFixed(2) }}]
                 </p>
                 <p style="margin: 0;">Bias Gyro(rad/s): [{{ xest.biasGyro[0].toFixed(2) }}, {{
@@ -485,7 +848,7 @@ onMounted(() => {
                             {{ geoGranted ? '-- ACTIVE --' : '-X- INACTIVE -X-' }}
                         </span>
                         <button
-                            @click="requestGyroPermission"
+                            @click="requestGeoPermission"
                             style="margin-left: auto; padding: 5px 10px; background: #ff6600; color: #000; border: none; cursor: pointer; font-weight: bold;"
                         >
                             Enable GPS
@@ -531,8 +894,26 @@ onMounted(() => {
                 <strong>Raw Sensor Data:</strong><br><br>
                 <strong>IMU (Accel + Gyro):</strong><br>
                 <span :style="{ color: gyroGranted ? '#0f0' : '#888' }">
-                    Accel: {{latestIMU.accel.map(x => x.toFixed(2)).join(', ')}} m/s²<br>
-                    Gyro: {{latestIMU.gyro.map(x => x.toFixed(2)).join(', ')}} rad/s
+                    Accel: {{debugData?.accelerationIncludingGravity ? [debugData.accelerationIncludingGravity.x,
+                    debugData.accelerationIncludingGravity.y, debugData.accelerationIncludingGravity.z].map(x => (x ||
+                        0).toFixed(2)).join(', ') : 'null'}} m/s²<br>
+                    Gyro: {{debugData?.rotationRate ? [debugData.rotationRate.alpha, debugData.rotationRate.beta,
+                    debugData.rotationRate.gamma].map(x => (x || 0).toFixed(2)).join(', ') : 'null'}} deg/s
+                </span><br><br>
+                <strong>Debug - Raw Sensor Event:</strong><br>
+                <span style="font-size: 10px; color: #ffff00;">
+                    <div v-if="debugData">
+                        Accel: {{debugData.acceleration ? [debugData.acceleration.x, debugData.acceleration.y,
+                        debugData.acceleration.z].map(x => x?.toFixed(2) || 'null').join(', ') : 'null'}}<br>
+                        Accel+Grav: {{debugData.accelerationIncludingGravity ?
+                            [debugData.accelerationIncludingGravity.x, debugData.accelerationIncludingGravity.y,
+                            debugData.accelerationIncludingGravity.z].map(x => x?.toFixed(2) || 'null').join(', ') : 'null'
+                        }}<br>
+                        Gyro: {{debugData.rotationRate ? [debugData.rotationRate.alpha, debugData.rotationRate.beta,
+                        debugData.rotationRate.gamma].map(x => x?.toFixed(2) || 'null').join(', ') : 'null'}} deg/s<br>
+                        Interval: {{ debugData.interval?.toFixed(2) || 'null' }} ms
+                    </div>
+                    <div v-else>No sensor events received yet</div>
                 </span><br><br>
                 <strong>GPS Position:</strong><br>
                 <span :style="{ color: geoGranted ? '#0f0' : '#888' }">
