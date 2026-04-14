@@ -364,7 +364,7 @@ const close3D = () => {
                   position: fixed; bottom: 20px; right: 20px;
                   z-index: 110;
                   font-family: monospace;
-                  font-size: 12px;
+                  font-size: 10px;
                   color: #0f0;
                   background: #000a;
                   padding: 10px;
@@ -377,16 +377,20 @@ const close3D = () => {
                   gap: 4px;
                 "
             >
-                <p>🧭 EKF State (phone cube)</p>
-                <p>Pos: [{{ xest.pos[0].toFixed(2) }}, {{ xest.pos[1].toFixed(2) }}, {{ xest.pos[2].toFixed(2) }}]</p>
-                <p>Vel: [{{ xest.vel[0].toFixed(2) }}, {{ xest.vel[1].toFixed(2) }}, {{ xest.vel[2].toFixed(2) }}]</p>
-                <p>Att: [{{ xest.att[0].toFixed(2) }}, {{ xest.att[1].toFixed(2) }}, {{ xest.att[2].toFixed(2) }}]</p>
-                <p>
-                    Bias Acc: [{{ xest.biasAcc[0].toFixed(2) }}, {{ xest.biasAcc[1].toFixed(2) }}, {{
+                <p style="font-size: 12px;">EKF State Data</p>
+                <p style="margin: 0;">Pos(m): [{{ xest.pos[0].toFixed(2) }}, {{ xest.pos[1].toFixed(2) }}, {{
+                    xest.pos[2].toFixed(2) }}]</p>
+                <p style="margin: 0;">Vel(m/s): [{{ xest.vel[0].toFixed(2) }}, {{ xest.vel[1].toFixed(2) }}, {{
+                    xest.vel[2].toFixed(2) }}]</p>
+                <p style="margin: 0;">Att(rad): [{{ xest.att[0].toFixed(2) }}, {{ xest.att[1].toFixed(2) }}, {{
+                    xest.att[2].toFixed(2) }}]</p>
+                <p style="margin: 0;">Bias Acc(m/s²): [{{ xest.biasAcc[0].toFixed(2) }}, {{ xest.biasAcc[1].toFixed(2)
+                    }}, {{
                         xest.biasAcc[2].toFixed(2) }}]
                 </p>
-                <p>
-                    Bias Gyro: [{{ xest.biasGyro[0].toFixed(2) }}, {{ xest.biasGyro[1].toFixed(2) }}, {{
+                <p style="margin: 0;">Bias Gyro(rad/s): [{{ xest.biasGyro[0].toFixed(2) }}, {{
+                    xest.biasGyro[1].toFixed(2) }},
+                    {{
                         xest.biasGyro[2].toFixed(2) }}]
                 </p>
             </div>
