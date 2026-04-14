@@ -455,7 +455,7 @@ onMounted(() => {
                 <p style="margin: 0;">Att(rad): [{{ xest.att[0].toFixed(2) }}, {{ xest.att[1].toFixed(2) }}, {{
                     xest.att[2].toFixed(2) }}]</p>
                 <p style="margin: 0;">Bias Acc(m/s²): [{{ xest.biasAcc[0].toFixed(2) }}, {{ xest.biasAcc[1].toFixed(2)
-                }}, {{
+                    }}, {{
                         xest.biasAcc[2].toFixed(2) }}]
                 </p>
                 <p style="margin: 0;">Bias Gyro(rad/s): [{{ xest.biasGyro[0].toFixed(2) }}, {{

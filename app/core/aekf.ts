@@ -38,16 +38,16 @@ export class AEKFFilter {
 		let [bgx, bgy, bgz] = this.x.slice(12, 15);
 
 		// Remove estimated biases from sensor readings
-    const ax = accel[0] - bax!;
-    const ay = accel[1] - bay!;
-    const az = accel[2] - baz!;
-    const gx = gyro[0] - bgx!;
-    const gy = gyro[1] - bgy!;
-    const gz = gyro[2] - bgz!;
+		const ax = accel[0] - bax!;
+		const ay = accel[1] - bay!;
+		const az = accel[2] - baz!;
+		const gx = gyro[0] - bgx!;
+		const gy = gyro[1] - bgy!;
+		const gz = gyro[2] - bgz!;
 		// Update attitude (Euler integration – simple for demo)
-    roll! += gx * dt;
-    pitch! += gy * dt;
-    yaw! += gz * dt;
+		roll! += gx * dt;
+		pitch! += gy * dt;
+		yaw! += gz * dt;
 		// Build rotation matrix from body to world (ZYX Euler)
 		const cr = Math.cos(roll!),
 			sr = Math.sin(roll!);
@@ -62,10 +62,10 @@ export class AEKFFilter {
 		];
 
 		// Transform acceleration to world frame and subtract gravity
-    const aw_x = R_wb[0]![0]! * ax + R_wb[0]![1]! * ay + R_wb[0]![2]! * az;
-    const aw_y = R_wb[1]![0]! * ax + R_wb[1]![1]! * ay + R_wb[1]![2]! * az;
-    const aw_z =
-      R_wb[2]![0]! * ax + R_wb[2]![1]! * ay + R_wb[2]![2]! * az - this.g;
+		const aw_x = R_wb[0]![0]! * ax + R_wb[0]![1]! * ay + R_wb[0]![2]! * az;
+		const aw_y = R_wb[1]![0]! * ax + R_wb[1]![1]! * ay + R_wb[1]![2]! * az;
+		const aw_z =
+			R_wb[2]![0]! * ax + R_wb[2]![1]! * ay + R_wb[2]![2]! * az - this.g;
 		// Update velocity and position
 		vx! += aw_x * dt;
 		vy! += aw_y * dt;
