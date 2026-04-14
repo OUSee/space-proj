@@ -4,6 +4,7 @@
 >
 import { onMounted, ref, computed } from 'vue';
 import { AEKFFilter } from '~/core/aekf';
+import { useGeolocation } from '@vueuse/core'
 import type { IMUData, StateVector } from '~/types';
 
 // Refs for UI
@@ -28,11 +29,13 @@ const xest = ref<StateVector>({
 const trajectory = ref<number[][]>([]);
 const frameCount = ref(0);
 const lastFrameTime = ref(performance.now());
+
 const fps = computed(() => {
     const now = performance.now();
     const delta = now - lastFrameTime.value;
     return delta > 0 ? (1000 / delta).toFixed(1) : '0';
 });
+
 const rmse = computed(() => {
     if (trajectory.value.length < 2) return 0;
     let sum = 0;
@@ -43,6 +46,43 @@ const rmse = computed(() => {
     }
     return Math.sqrt(sum / trajectory.value.length).toFixed(3);
 });
+
+// GPS через useGeolocation (всё, что нужно)
+const { coords, locatedAt, error } = useGeolocation({
+    enableHighAccuracy: true,
+    maximumAge: 1000,
+    timeout: 5000,
+})
+
+watch(
+    error,
+    (err) => {
+        if (err) {
+            geoGranted.value = false
+            status.value = `⚠️ GPS error: ${err.message}`
+        }
+    }
+)
+
+// Обновление latestGPS по geo
+watch(
+    () => coords.value,
+    (c) => {
+        if (!c) return
+
+        latestGPS.value = {
+            pos: [c.latitude, c.longitude, c.altitude ?? 0],
+            ts: performance.now(),
+        }
+
+        geoGranted.value = true
+        if (!status.value.includes('GPS OK')) {
+            status.value = `GPS OK: ${c.latitude.toFixed(5)}, ${c.longitude.toFixed(5)} | ${Math.floor(c.accuracy)}m`
+        }
+    },
+    { immediate: true }
+)
+
 
 onMounted(async () => {
     if (typeof window === 'undefined') return;
@@ -78,6 +118,12 @@ onMounted(async () => {
                 frameCount.value++;
                 lastFrameTime.value = performance.now();
             }
+
+            const now = performance.now()
+            if (latestGPS.value.ts - now > -1000) {
+                const gps = geoGranted.value ? latestGPS.value : { pos: [0, 0, 0], ts: 0 }
+                // Здесь можно делать дополнительную привязку к xest или отдельный geo‑фильтр
+            }
         }
     });
 
@@ -94,29 +140,35 @@ const requestGyroPermission = async () => {
             const permission = await (DeviceMotionEvent as any).requestPermission();
             if (permission === 'granted') {
                 gyroGranted.value = true;
-                status.value = '✓ Gyro access granted!';
+                status.value = 'Gyro access granted!';
             } else {
-                status.value = '✗ Gyro access denied';
+                status.value = 'X Gyro access denied';
             }
         } else {
             // Android/others - already have permission if devicemotion fires
             gyroGranted.value = true;
-            status.value = '✓ Gyro access active';
+            status.value = 'Gyro access active';
         }
     } catch (error) {
         console.error('Gyro permission error:', error);
-        status.value = '✗ Gyro permission failed';
+        status.value = 'X Gyro permission failed';
     }
 };
 
 const requestGeoPermission = async () => {
     try {
         if (!navigator.geolocation) {
-            status.value = '✗ Geolocation not available';
+            status.value = 'X Geolocation not available';
             return;
         }
 
-        status.value = '🔄 Getting GPS/WiFi fix... (15-60s)';
+        status.value = 'Getting GPS/WiFi fix... (15-60s)';
+
+        const options = {
+            enableHighAccuracy: true,
+            timeout: 5000,        // 5s на поиск GPS‑сигнала
+            maximumAge: 500,     // 1s — готов брать свежие данные
+        }
 
         navigator.geolocation.getCurrentPosition(
             (position) => {
@@ -125,7 +177,7 @@ const requestGeoPermission = async () => {
                     pos: [position.coords.latitude, position.coords.longitude, position.coords.altitude || 0],
                     ts: performance.now(),
                 };
-                status.value = `✓ GPS OK: ${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)} | accuracy: ${position.coords.accuracy}m`;
+                status.value = `GPS OK: ${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)} | accuracy: ${position.coords.accuracy}m`;
 
                 // WiFi fallback watch
                 navigator.geolocation.watchPosition(
@@ -145,7 +197,7 @@ const requestGeoPermission = async () => {
             },
             (error) => {
                 console.error('GPS error:', error.code, error.message);
-                status.value = '📶 Using WiFi location...';
+                status.value = 'Using WiFi location...';
                 navigator.geolocation.getCurrentPosition(
                     (pos) => {
                         geoGranted.value = true;
@@ -169,7 +221,7 @@ const requestGeoPermission = async () => {
             }
         );
     } catch (error) {
-        status.value = '✗ GPS failed';
+        status.value = 'X GPS failed';
     }
 };
 
@@ -184,10 +236,8 @@ const initThreeScene = (THREEModule: any) => {
     const container = document.getElementById('three-container');
     if (!container) return;
 
-    // THREE is the default export or named export from the three module
     const THREE = THREEModule.default || THREEModule;
 
-    // Scene setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x111111);
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -195,7 +245,7 @@ const initThreeScene = (THREEModule: any) => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     container.appendChild(renderer.domElement);
 
-    camera.position.set(5, 5, 5);
+    camera.position.set(1, 1, 1);
     camera.lookAt(0, 0, 0);
 
     // Grid
@@ -212,22 +262,37 @@ const initThreeScene = (THREEModule: any) => {
     const trajectoryLine = new THREE.Line(trajectoryGeometry, trajectoryMaterial);
     scene.add(trajectoryLine);
 
-    // Current position sphere
-    const sphereGeometry = new THREE.SphereGeometry(0.2, 8, 8);
-    const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const currentPositionSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-    scene.add(currentPositionSphere);
+    // 75mm x 155mm x 8mm phone (в метрах: 0.075 x 0.155 x 0.008)
+    const phoneWidth = 0.075;   // X
+    const phoneHeight = 0.155;  // Y
+    const phoneDepth = 0.008;   // Z
+
+    const cubeGeometry = new THREE.BoxGeometry(phoneWidth, phoneHeight, phoneDepth);
+    const cubeMaterial = new THREE.MeshBasicMaterial({ color: 0x00aaff, opacity: 0.7, transparent: true });
+    const phoneCube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+    scene.add(phoneCube);
+
+    // Wireframe wrapper (EdgesGeometry)
+    const edgesGeometry = new THREE.EdgesGeometry(cubeGeometry, 5); // 5° — угол для граней
+    const wireMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
+    const wireframe = new THREE.LineSegments(edgesGeometry, wireMaterial);
+    phoneCube.add(wireframe); // wireframe «привязан» к кубу, вращается вместе
 
     // Animation loop
     const animate = () => {
         requestAnimationFrame(animate);
 
-        // Update trajectory
         const positions = trajectory.value.map(p => [p[0] || 0, p[1] || 0, p[2] || 0]).flat();
         trajectoryGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
 
-        // Update current position
-        currentPositionSphere.position.set(xest.value.pos[0], xest.value.pos[1], xest.value.pos[2]);
+        const pos = xest.value.pos;
+        const att = xest.value.att;
+
+        phoneCube.position.set(pos[0], pos[1], pos[2]);
+
+        // Устанавливаем ориентацию куба по att (roll, pitch, yaw)
+        const rotation = new THREE.Euler(att[0], att[1], att[2], 'XYZ');
+        phoneCube.quaternion.setFromEuler(rotation);
 
         renderer.render(scene, camera);
     };
@@ -259,7 +324,7 @@ const close3D = () => {
             id="index-container"
             style="font-family: monospace; padding: 20px; background: #222; color: #0f0; min-height: 100vh; overflow-y: auto;"
         >
-            <h2>🚀 Navigation Dashboard</h2>
+            <h2>Navigation INFO</h2>
 
             <div style="margin: 20px 0; padding: 10px; background: #111; border: 1px solid #0f0;">
                 <strong>Status:</strong> {{ status }}
@@ -271,9 +336,9 @@ const close3D = () => {
                 <button
                     v-if="!show3D"
                     @click="start3DDemo"
-                    style="padding: 12px 30px; background: #ffff00; color: #000; border: none; cursor: pointer; font-weight: bold; font-size: 16px; border-radius: 5px;"
+                    style="padding: 12px 30px; background: rgb(0 255 0); color: #000; border: none; cursor: pointer; font-weight: bold; font-size: 16px; border-radius: 5px;"
                 >
-                    🎮 Start 3D Demonstration
+                    Start 3D Demonstration
                 </button>
                 <button
                     v-else
@@ -291,28 +356,63 @@ const close3D = () => {
                 style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 100;"
             ></div>
 
+            <!-- HUD над 3D‑окном -->
+            <div
+                v-if="show3D"
+                class="three-hud"
+                style="
+                  position: fixed; bottom: 20px; right: 20px;
+                  z-index: 110;
+                  font-family: monospace;
+                  font-size: 12px;
+                  color: #0f0;
+                  background: #000a;
+                  padding: 10px;
+                  border-radius: 4px;
+                  border: 1px solid white;
+                  white-space: pre;
+                  pointer-events: none;
+                  display: flex;
+                  flex-direction: column;
+                  gap: 4px;
+                "
+            >
+                <p>🧭 EKF State (phone cube)</p>
+                <p>Pos: [{{ xest.pos[0].toFixed(2) }}, {{ xest.pos[1].toFixed(2) }}, {{ xest.pos[2].toFixed(2) }}]</p>
+                <p>Vel: [{{ xest.vel[0].toFixed(2) }}, {{ xest.vel[1].toFixed(2) }}, {{ xest.vel[2].toFixed(2) }}]</p>
+                <p>Att: [{{ xest.att[0].toFixed(2) }}, {{ xest.att[1].toFixed(2) }}, {{ xest.att[2].toFixed(2) }}]</p>
+                <p>
+                    Bias Acc: [{{ xest.biasAcc[0].toFixed(2) }}, {{ xest.biasAcc[1].toFixed(2) }}, {{
+                        xest.biasAcc[2].toFixed(2) }}]
+                </p>
+                <p>
+                    Bias Gyro: [{{ xest.biasGyro[0].toFixed(2) }}, {{ xest.biasGyro[1].toFixed(2) }}, {{
+                        xest.biasGyro[2].toFixed(2) }}]
+                </p>
+            </div>
+
             <div style="margin: 20px 0; padding: 15px; background: #1a1a1a; border: 1px solid #ff6600;">
-                <strong>📍 Sensor Permissions:</strong>
+                <strong>Sensor Permissions:</strong>
                 <div style="margin-top: 10px;">
-                    <div style="margin-bottom: 10px;">
-                        <strong>Accelerometer & Gyroscope:</strong> <span
+                    <div style="width: 100%; display: flex; margin-bottom: 10px;">
+                        <strong>Accelerometer & Gyroscope:</strong>&nbsp;<span
                             :style="{ color: gyroGranted ? '#0f0' : '#f00' }"
-                        >{{ gyroGranted ? '✓ ACTIVE' : '✗ INACTIVE' }}</span>
+                        >{{ gyroGranted ? '-- ACTIVE --' : '-X- INACTIVE -X-' }}</span>
                         <button
                             @click="requestGyroPermission"
-                            style="margin-left: 10px; padding: 5px 10px; background: #ff6600; color: #000; border: none; cursor: pointer; font-weight: bold;"
+                            style="margin-left: auto; padding: 5px 10px; background: #ff6600; color: #000; border: none; cursor: pointer; font-weight: bold;"
                         >
                             Enable Gyro
                         </button>
                     </div>
-                    <div>
-                        <strong>GPS:</strong>
+                    <div style="width: 100%; display: flex;">
+                        <strong>GPS:</strong>&nbsp;
                         <span :style="{ color: geoGranted ? '#0f0' : '#f00' }">
-                            {{ geoGranted ? '✓ ACTIVE' : '✗ INACTIVE' }}
+                            {{ geoGranted ? '-- ACTIVE --' : '-X- INACTIVE -X-' }}
                         </span>
                         <button
                             @click="requestGeoPermission"
-                            style="margin-left: 10px; padding: 5px 10px; background: #ff6600; color: #000; border: none; cursor: pointer; font-weight: bold;"
+                            style="margin-left: auto; padding: 5px 10px; background: #ff6600; color: #000; border: none; cursor: pointer; font-weight: bold;"
                         >
                             Enable GPS
                         </button>
@@ -322,7 +422,7 @@ const close3D = () => {
 
             <!-- Metrics HUD -->
             <div style="margin: 20px 0; padding: 15px; background: #0a2a0a; border: 2px solid #0f0;">
-                <strong>📊 Live Metrics:</strong>
+                <strong>Live Metrics:</strong>
                 <div style="margin-top: 10px; font-size: 14px;">
                     <div>FPS: <span style="color: #ffff00;">{{ fps }}</span></div>
                     <div>Trajectory Points: <span style="color: #ffff00;">{{ trajectory.length }}</span></div>
@@ -354,7 +454,7 @@ const close3D = () => {
 
             <!-- Raw Sensor Data -->
             <div style="margin-top: 40px; padding: 10px; background: #111; font-size: 12px;">
-                <strong>📊 Raw Sensor Data:</strong><br><br>
+                <strong>Raw Sensor Data:</strong><br><br>
                 <strong>IMU (Accel + Gyro):</strong><br>
                 <span :style="{ color: gyroGranted ? '#0f0' : '#888' }">
                     Accel: {{latestIMU.accel.map(x => x.toFixed(2)).join(', ')}} m/s²<br>
