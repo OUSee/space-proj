@@ -62,6 +62,29 @@ export class MatrixUtils {
 			],
 		];
 	}
+	static add(A: number[][], B: number[][]): number[][] {
+		if (A.length !== B.length || A[0]?.length !== B[0]?.length)
+			throw new Error('Matrix dimensions mismatch for addition');
+		return A.map((row, i) => row.map((val, j) => val + B[i]![j]!));
+	}
+
+	static subtract(A: number[][], B: number[][]): number[][] {
+		if (A.length !== B.length || A[0]?.length !== B[0]?.length)
+			throw new Error('Matrix dimensions mismatch for subtraction');
+		return A.map((row, i) => row.map((val, j) => val - B[i]![j]!));
+	}
+
+	static copy(A: number[][]): number[][] {
+		return A.map((row) => [...row]);
+	}
+
+	// Also add a helper to create a diagonal matrix from an array
+	static diag(values: number[]): number[][] {
+		const n = values.length;
+		const out = Array.from({ length: n }, () => new Array(n).fill(0));
+		for (let i = 0; i < n; i++) out[i]![i] = values[i]!;
+		return out;
+	}
 	static transpose(A: number[][]): number[][] {
 		if (A.length === 0) return [];
 		const numCols = A[0]!.length;

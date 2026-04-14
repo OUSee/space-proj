@@ -2,23 +2,24 @@
     setup
     lang="ts"
 >
-import { onMounted, ref, computed } from 'vue';
+import { onMounted, ref, computed, watch } from 'vue';
 import { AEKFFilter } from '~/core/aekf';
-import { useGeolocation } from '@vueuse/core'
+import { MatrixUtils } from '~/core/matrix';
+import { useGeolocation } from '@vueuse/core';
 import type { IMUData, StateVector } from '~/types';
 
-// Refs for UI
+// ----------------------------- Reactive state -----------------------------
 const status = ref('Initializing...');
 const gyroGranted = ref(false);
 const geoGranted = ref(false);
 const show3D = ref(false);
+const isCalibrating = ref(false);
+const calibrationData = ref<{ accelMean: number[]; gyroMean: number[] } | null>(null);
 
-// Sensor data
+let filterInstance: AEKFFilter | null = null;
+
 const latestIMU = ref<IMUData>({ accel: [0, 0, 0], gyro: [0, 0, 0], ts: 0 });
 const latestGPS = ref({ pos: [0, 0, 0], ts: 0 });
-
-// Filter & calculations
-const filter = ref<AEKFFilter | null>(null);
 const xest = ref<StateVector>({
     pos: [0, 0, 0],
     vel: [0, 0, 0],
@@ -40,272 +41,234 @@ const rmse = computed(() => {
     if (trajectory.value.length < 2) return 0;
     let sum = 0;
     for (const pos of trajectory.value) {
-        if (pos && pos[0] !== undefined && pos[1] !== undefined && pos[2] !== undefined) {
+        if (pos && pos.length >= 3 && pos[0] !== undefined && pos[1] !== undefined && pos[2] !== undefined) {
             sum += pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2];
         }
     }
     return Math.sqrt(sum / trajectory.value.length).toFixed(3);
 });
 
-// GPS через useGeolocation (всё, что нужно)
-const { coords, locatedAt, error } = useGeolocation({
+// ----------------------------- GPS (VueUse) -----------------------------
+const { coords, error } = useGeolocation({
     enableHighAccuracy: true,
     maximumAge: 1000,
     timeout: 5000,
-})
-
-watch(
-    error,
-    (err) => {
-        if (err) {
-            geoGranted.value = false
-            status.value = `⚠️ GPS error: ${err.message}`
-        }
-    }
-)
-
-// Обновление latestGPS по geo
-watch(
-    () => coords.value,
-    (c) => {
-        if (!c) return
-
-        latestGPS.value = {
-            pos: [c.latitude, c.longitude, c.altitude ?? 0],
-            ts: performance.now(),
-        }
-
-        geoGranted.value = true
-        if (!status.value.includes('GPS OK')) {
-            status.value = `GPS OK: ${c.latitude.toFixed(5)}, ${c.longitude.toFixed(5)} | ${Math.floor(c.accuracy)}m`
-        }
-    },
-    { immediate: true }
-)
-
-
-onMounted(async () => {
-    if (typeof window === 'undefined') return;
-
-    // Initialize EKF filter
-    const Q = Array.from({ length: 15 }, () => Array(15).fill(0.01));
-    const R = Array.from({ length: 3 }, () => Array(3).fill(0.1));
-    filter.value = new AEKFFilter(0.01, Q, R);
-
-    status.value = 'Ready - processing locally';
-
-    // Capture IMU data
-    window.addEventListener('devicemotion', (event) => {
-        if (event.acceleration && event.rotationRate) {
-            latestIMU.value = {
-                accel: [event.acceleration.x || 0, event.acceleration.y || 0, event.acceleration.z || 0],
-                gyro: [event.rotationRate.alpha || 0, event.rotationRate.beta || 0, event.rotationRate.gamma || 0],
-                ts: performance.now(),
-            };
-
-            // Process through filter
-            if (filter.value && gyroGranted.value) {
-                const result = filter.value.predict(latestIMU.value);
-                xest.value.pos = result.xpred.slice(0, 3) as [number, number, number];
-                xest.value.vel = result.xpred.slice(3, 6) as [number, number, number];
-                xest.value.att = result.xpred.slice(6, 9) as [number, number, number];
-                xest.value.biasAcc = result.xpred.slice(9, 12) as [number, number, number];
-                xest.value.biasGyro = result.xpred.slice(12, 15) as [number, number, number];
-
-                trajectory.value.push([...xest.value.pos]);
-                if (trajectory.value.length > 2000) trajectory.value.shift();
-
-                frameCount.value++;
-                lastFrameTime.value = performance.now();
-            }
-
-            const now = performance.now()
-            if (latestGPS.value.ts - now > -1000) {
-                const gps = geoGranted.value ? latestGPS.value : { pos: [0, 0, 0], ts: 0 }
-                // Здесь можно делать дополнительную привязку к xest или отдельный geo‑фильтр
-            }
-        }
-    });
-
-    requestGyroPermission();
-    requestGeoPermission();
 });
 
-const requestGyroPermission = async () => {
-    try {
-        if (typeof window === 'undefined') return;
+watch(error, (err) => {
+    if (err) {
+        geoGranted.value = false;
+        status.value = `⚠️ GPS error: ${err.message}`;
+    }
+});
 
-        // iOS 13+
-        if (typeof (DeviceMotionEvent as any)?.requestPermission === 'function') {
+// GPS to ENU conversion (reference point set on first fix)
+let refLat = 0, refLon = 0, refAlt = 0;
+let refSet = false;
+
+function geodeticToEnu(lat: number, lon: number, alt: number): [number, number, number] {
+    const R = 6378137; // Earth radius (m)
+    const radLat = lat * Math.PI / 180;
+    const radLon = lon * Math.PI / 180;
+    const radRefLat = refLat * Math.PI / 180;
+    const radRefLon = refLon * Math.PI / 180;
+    const sinLat = Math.sin(radLat), cosLat = Math.cos(radLat);
+    const sinLon = Math.sin(radLon), cosLon = Math.cos(radLon);
+    const sinRefLat = Math.sin(radRefLat), cosRefLat = Math.cos(radRefLat);
+    const sinRefLon = Math.sin(radRefLon), cosRefLon = Math.cos(radRefLon);
+
+    const dx = (R + alt) * cosLat * cosLon - (R + refAlt) * cosRefLat * cosRefLon;
+    const dy = (R + alt) * cosLat * sinLon - (R + refAlt) * cosRefLat * sinRefLon;
+    const dz = (R + alt) * sinLat - (R + refAlt) * sinRefLat;
+
+    const east = -sinRefLon * dx + cosRefLon * dy;
+    const north = -sinRefLat * cosRefLon * dx - sinRefLat * sinRefLon * dy + cosRefLat * dz;
+    const up = cosRefLat * cosRefLon * dx + cosRefLat * sinRefLon * dy + sinRefLat * dz;
+    return [east, north, up];
+}
+
+watch(() => coords.value, (c) => {
+    if (!c || !filterInstance) return;
+    if (!refSet && c.latitude && c.longitude) {
+        refLat = c.latitude;
+        refLon = c.longitude;
+        refAlt = c.altitude ?? 0;
+        refSet = true;
+        status.value = `Reference set: ${refLat.toFixed(5)}, ${refLon.toFixed(5)}`;
+    }
+    const enu = geodeticToEnu(c.latitude, c.longitude, c.altitude ?? 0);
+    const accHor = Math.max(c.accuracy, 5.0);
+    const R_pos = [
+        [accHor ** 2, 0, 0],
+        [0, accHor ** 2, 0],
+        [0, 0, 10.0]  // vertical accuracy worse
+    ];
+    filterInstance.updatePosition(enu, R_pos);
+    geoGranted.value = true;
+    status.value = `GPS update: ${enu[0].toFixed(1)}m E, ${enu[1].toFixed(1)}m N`;
+});
+
+// ----------------------------- Calibration -----------------------------
+async function calibrateSensors(): Promise<void> {
+    isCalibrating.value = true;
+    status.value = '📱 Calibrating – keep phone still on a flat surface...';
+    const accelSamples: number[][] = [];
+    const gyroSamples: number[][] = [];
+
+    return new Promise((resolve) => {
+        const startTime = performance.now();
+        const handler = (e: DeviceMotionEvent) => {
+            const now = performance.now();
+            if (now - startTime > 2000) {
+                window.removeEventListener('devicemotion', handler);
+                const accelMean = accelSamples.reduce(
+                    (a, b) => {
+                        if (a.length >= 3 && b.length >= 3 && a[0] !== undefined && a[1] !== undefined && a[2] !== undefined && b[0] !== undefined && b[1] !== undefined && b[2] !== undefined) {
+                            return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+                        }
+                        return a;
+                    },
+                    [0, 0, 0]
+                ).map(v => v / accelSamples.length);
+                const gyroMean = gyroSamples.reduce(
+                    (a, b) => {
+                        if (a.length >= 3 && b.length >= 3 && a[0] !== undefined && a[1] !== undefined && a[2] !== undefined && b[0] !== undefined && b[1] !== undefined && b[2] !== undefined) {
+                            return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+                        }
+                        return a;
+                    },
+                    [0, 0, 0]
+                ).map(v => v / gyroSamples.length);
+                calibrationData.value = { accelMean, gyroMean };
+                status.value = '✅ Calibration done. Starting filter...';
+                initFilter();
+                resolve();
+                return;
+            }
+            if (e.acceleration) {
+                accelSamples.push([e.acceleration.x || 0, e.acceleration.y || 0, e.acceleration.z || 0]);
+            }
+            if (e.rotationRate) {
+                const gyroRad = [
+                    (e.rotationRate.alpha || 0) * Math.PI / 180,
+                    (e.rotationRate.beta || 0) * Math.PI / 180,
+                    (e.rotationRate.gamma || 0) * Math.PI / 180
+                ];
+                gyroSamples.push(gyroRad);
+            }
+        };
+        window.addEventListener('devicemotion', handler);
+    });
+}
+
+function initFilter() {
+    const initialX = new Array(15).fill(0);
+    if (calibrationData.value) {
+        // Static bias from calibration
+        initialX[9] = calibrationData.value.accelMean[0]!;
+        initialX[10] = calibrationData.value.accelMean[1]!;
+        initialX[11] = calibrationData.value.accelMean[2]! - 9.81; // remove gravity from Z
+        initialX[12] = calibrationData.value.gyroMean[0]!;
+        initialX[13] = calibrationData.value.gyroMean[1]!;
+        initialX[14] = calibrationData.value.gyroMean[2]!;
+    }
+    const initialP = MatrixUtils.eye(15).map(row => row.map(() => 1.0));
+    const Q = MatrixUtils.eye(15).map(row => row.map(() => 0.01));
+    const R = MatrixUtils.eye(3).map(row => row.map(() => 5.0));
+    filterInstance = new AEKFFilter(initialX, initialP, Q, R);
+    status.value = 'Filter ready – listening to IMU';
+}
+
+// ----------------------------- IMU Event Handler -----------------------------
+let lastTimestamp = 0;
+
+function handleDeviceMotion(event: DeviceMotionEvent) {
+    if (!filterInstance || !gyroGranted.value || isCalibrating.value) return;
+
+    const now = performance.now();
+    const dt = lastTimestamp ? Math.min(0.1, (now - lastTimestamp) / 1000) : 0.01;
+    lastTimestamp = now;
+
+    // Raw readings
+    let accel: [number, number, number] = [
+        event.acceleration?.x ?? 0,
+        event.acceleration?.y ?? 0,
+        event.acceleration?.z ?? 0
+    ];
+    let gyro: [number, number, number] = [
+        (event.rotationRate?.alpha ?? 0) * Math.PI / 180,
+        (event.rotationRate?.beta ?? 0) * Math.PI / 180,
+        (event.rotationRate?.gamma ?? 0) * Math.PI / 180
+    ];
+
+    // Remove static calibration biases
+    if (calibrationData.value) {
+        accel = [
+            accel[0] - calibrationData.value.accelMean[0]!,
+            accel[1] - calibrationData.value.accelMean[1]!,
+            accel[2] - calibrationData.value.accelMean[2]!
+        ];
+        gyro = [
+            gyro[0] - calibrationData.value.gyroMean[0]!,
+            gyro[1] - calibrationData.value.gyroMean[1]!,
+            gyro[2] - calibrationData.value.gyroMean[2]!
+        ];
+    }
+
+    // Predict step
+    filterInstance.predict(accel, gyro, dt);
+
+    // Update reactive state
+    xest.value = {
+        pos: filterInstance.getPosition(),
+        vel: filterInstance.getVelocity(),
+        att: filterInstance.getAttitude(),
+        biasAcc: filterInstance.getBiasAcc(),
+        biasGyro: filterInstance.getBiasGyro()
+    };
+
+    trajectory.value.push([...xest.value.pos]);
+    if (trajectory.value.length > 2000) trajectory.value.shift();
+
+    frameCount.value++;
+    lastFrameTime.value = now;
+}
+
+// ----------------------------- Permissions -----------------------------
+async function requestGyroPermission() {
+    try {
+        if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
             const permission = await (DeviceMotionEvent as any).requestPermission();
             if (permission === 'granted') {
                 gyroGranted.value = true;
-                status.value = 'Gyro access granted!';
+                status.value = 'Gyro access granted';
+                window.addEventListener('devicemotion', handleDeviceMotion);
             } else {
-                status.value = 'X Gyro access denied';
+                status.value = 'Gyro access denied';
             }
         } else {
-            // Android/others - already have permission if devicemotion fires
             gyroGranted.value = true;
-            status.value = 'Gyro access active';
+            status.value = 'Gyro access active (no permission needed)';
+            window.addEventListener('devicemotion', handleDeviceMotion);
         }
     } catch (error) {
-        console.error('Gyro permission error:', error);
-        status.value = 'X Gyro permission failed';
+        console.error(error);
+        status.value = 'Gyro permission error';
     }
-};
+}
 
-const requestGeoPermission = async () => {
-    try {
-        if (!navigator.geolocation) {
-            status.value = 'X Geolocation not available';
-            return;
-        }
-
-        status.value = 'Getting GPS/WiFi fix... (15-60s)';
-
-        const options = {
-            enableHighAccuracy: true,
-            timeout: 5000,        // 5s на поиск GPS‑сигнала
-            maximumAge: 500,     // 1s — готов брать свежие данные
-        }
-
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                geoGranted.value = true;
-                latestGPS.value = {
-                    pos: [position.coords.latitude, position.coords.longitude, position.coords.altitude || 0],
-                    ts: performance.now(),
-                };
-                status.value = `GPS OK: ${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)} | accuracy: ${position.coords.accuracy}m`;
-
-                // WiFi fallback watch
-                navigator.geolocation.watchPosition(
-                    (pos) => {
-                        latestGPS.value = {
-                            pos: [pos.coords.latitude, pos.coords.longitude, pos.coords.altitude || 0],
-                            ts: performance.now(),
-                        };
-                    },
-                    (err) => console.log('Watch timeout OK (normal indoor)'),
-                    {
-                        enableHighAccuracy: false,
-                        timeout: 30000,
-                        maximumAge: 10000
-                    }
-                );
-            },
-            (error) => {
-                console.error('GPS error:', error.code, error.message);
-                status.value = 'Using WiFi location...';
-                navigator.geolocation.getCurrentPosition(
-                    (pos) => {
-                        geoGranted.value = true;
-                        latestGPS.value.pos = [pos.coords.latitude, pos.coords.longitude, pos.coords.altitude || 0];
-                        status.value = `✓ WiFi OK: ${pos.coords.accuracy < 100 ? 'Good' : 'Rough'} (${pos.coords.accuracy}m)`;
-                    },
-                    () => {
-                        status.value = '⚠️ No GPS/WiFi - outdoors recommended';
-                    },
-                    {
-                        enableHighAccuracy: false,
-                        timeout: 30000,
-                        maximumAge: 60000
-                    }
-                );
-            },
-            {
-                enableHighAccuracy: true,
-                timeout: 45000,
-                maximumAge: 30000
-            }
-        );
-    } catch (error) {
-        status.value = 'X GPS failed';
-    }
-};
-
+// ----------------------------- 3D Demo -----------------------------
 const start3DDemo = async () => {
+    if (!gyroGranted.value) {
+        status.value = 'Please enable gyro first.';
+        return;
+    }
+    if (!calibrationData.value) {
+        await calibrateSensors();
+    }
     show3D.value = true;
-    // Dynamic import of Three.js for 3D visualization
     const THREE = await import('three');
     initThreeScene(THREE);
-};
-
-const initThreeScene = (THREEModule: any) => {
-    const container = document.getElementById('three-container');
-    if (!container) return;
-
-    const THREE = THREEModule.default || THREEModule;
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111111);
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    container.appendChild(renderer.domElement);
-
-    camera.position.set(1, 1, 1);
-    camera.lookAt(0, 0, 0);
-
-    // Grid
-    const gridHelper = new THREE.GridHelper(20, 20);
-    scene.add(gridHelper);
-
-    // Axes
-    const axesHelper = new THREE.AxesHelper(5);
-    scene.add(axesHelper);
-
-    // Trajectory line
-    const trajectoryGeometry = new THREE.BufferGeometry();
-    const trajectoryMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00 });
-    const trajectoryLine = new THREE.Line(trajectoryGeometry, trajectoryMaterial);
-    scene.add(trajectoryLine);
-
-    // 75mm x 155mm x 8mm phone (в метрах: 0.075 x 0.155 x 0.008)
-    const phoneWidth = 0.075;   // X
-    const phoneHeight = 0.155;  // Y
-    const phoneDepth = 0.008;   // Z
-
-    const cubeGeometry = new THREE.BoxGeometry(phoneWidth, phoneHeight, phoneDepth);
-    const cubeMaterial = new THREE.MeshBasicMaterial({ color: 0x00aaff, opacity: 0.7, transparent: true });
-    const phoneCube = new THREE.Mesh(cubeGeometry, cubeMaterial);
-    scene.add(phoneCube);
-
-    // Wireframe wrapper (EdgesGeometry)
-    const edgesGeometry = new THREE.EdgesGeometry(cubeGeometry, 5); // 5° — угол для граней
-    const wireMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
-    const wireframe = new THREE.LineSegments(edgesGeometry, wireMaterial);
-    phoneCube.add(wireframe); // wireframe «привязан» к кубу, вращается вместе
-
-    // Animation loop
-    const animate = () => {
-        requestAnimationFrame(animate);
-
-        const positions = trajectory.value.map(p => [p[0] || 0, p[1] || 0, p[2] || 0]).flat();
-        trajectoryGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-
-        const pos = xest.value.pos;
-        const att = xest.value.att;
-
-        phoneCube.position.set(pos[0], pos[1], pos[2]);
-
-        // Устанавливаем ориентацию куба по att (roll, pitch, yaw)
-        const rotation = new THREE.Euler(att[0], att[1], att[2], 'XYZ');
-        phoneCube.quaternion.setFromEuler(rotation);
-
-        renderer.render(scene, camera);
-    };
-
-    animate();
-
-    // Handle window resize
-    const onWindowResize = () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    };
-    window.addEventListener('resize', onWindowResize);
 };
 
 const close3D = () => {
@@ -316,6 +279,113 @@ const close3D = () => {
         if (canvas) container.removeChild(canvas);
     }
 };
+
+// ----------------------------- Three.js Scene -----------------------------
+const initThreeScene = (THREEModule: any) => {
+    const container = document.getElementById('three-container');
+    if (!container) return;
+
+    const THREE = THREEModule.default || THREEModule;
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111122);
+    scene.fog = new THREE.FogExp2(0x111122, 0.008);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0x404060);
+    scene.add(ambientLight);
+    const mainLight = new THREE.DirectionalLight(0xffffff, 1);
+    mainLight.position.set(2, 5, 3);
+    mainLight.castShadow = true;
+    scene.add(mainLight);
+    const fillLight = new THREE.PointLight(0x4466cc, 0.3);
+    fillLight.position.set(-1, 2, 2);
+    scene.add(fillLight);
+
+    // Ground grid
+    const gridHelper = new THREE.GridHelper(30, 20, 0x88aaff, 0x335588);
+    gridHelper.position.y = -0.01;
+    scene.add(gridHelper);
+
+    // Axes helper (optional)
+    const axesHelper = new THREE.AxesHelper(5);
+    scene.add(axesHelper);
+
+    // Phone model (0.075 x 0.155 x 0.008 m)
+    const geometry = new THREE.BoxGeometry(0.075, 0.155, 0.008);
+    const material = new THREE.MeshStandardMaterial({ color: 0x3a86ff, metalness: 0.7, roughness: 0.3 });
+    const phone = new THREE.Mesh(geometry, material);
+    phone.castShadow = true;
+    scene.add(phone);
+
+    // White edges
+    const edgesGeo = new THREE.EdgesGeometry(geometry);
+    const edgesMat = new THREE.LineBasicMaterial({ color: 0xffffff });
+    const wireframe = new THREE.LineSegments(edgesGeo, edgesMat);
+    phone.add(wireframe);
+
+    // Trajectory line and particles
+    const trailPoints: any[] = [];
+    const trailLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x00ff99 }));
+    scene.add(trailLine);
+    const particleGeo = new THREE.BufferGeometry();
+    const particleMat = new THREE.PointsMaterial({ color: 0x00ff99, size: 0.03 });
+    const particles = new THREE.Points(particleGeo, particleMat);
+    scene.add(particles);
+
+    let lastPos = new THREE.Vector3();
+
+    const animate = () => {
+        requestAnimationFrame(animate);
+
+        const pos = xest.value.pos;
+        const att = xest.value.att;
+        phone.position.set(pos[0], pos[1], pos[2]);
+        phone.rotation.set(att[0], att[1], att[2], 'XYZ');
+
+        // Update trail
+        const currentPos = new THREE.Vector3(pos[0], pos[1], pos[2]);
+        if (trailPoints.length === 0 || currentPos.distanceTo(lastPos) > 0.02) {
+            trailPoints.push(currentPos.clone());
+            if (trailPoints.length > 200) trailPoints.shift();
+            const positions = trailPoints.flatMap(p => [p.x, p.y, p.z]);
+            trailLine.geometry.dispose();
+            trailLine.geometry = new THREE.BufferGeometry();
+            trailLine.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+
+            particleGeo.dispose();
+            const particlePositions = trailPoints.flatMap(p => [p.x, p.y, p.z]);
+            particleGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(particlePositions), 3));
+            lastPos.copy(currentPos);
+        }
+
+        // Camera follow (third-person relative to phone orientation)
+        const offset = new THREE.Vector3(-0.5, 0.3, 0.8);
+        offset.applyQuaternion(phone.quaternion);
+        camera.position.copy(phone.position.clone().add(offset));
+        camera.lookAt(phone.position);
+
+        renderer.render(scene, camera);
+    };
+    animate();
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+};
+
+// ----------------------------- Lifecycle -----------------------------
+onMounted(() => {
+    requestGyroPermission();
+    // GPS is handled automatically by useGeolocation
+});
 </script>
 
 <template>
@@ -385,7 +455,7 @@ const close3D = () => {
                 <p style="margin: 0;">Att(rad): [{{ xest.att[0].toFixed(2) }}, {{ xest.att[1].toFixed(2) }}, {{
                     xest.att[2].toFixed(2) }}]</p>
                 <p style="margin: 0;">Bias Acc(m/s²): [{{ xest.biasAcc[0].toFixed(2) }}, {{ xest.biasAcc[1].toFixed(2)
-                    }}, {{
+                }}, {{
                         xest.biasAcc[2].toFixed(2) }}]
                 </p>
                 <p style="margin: 0;">Bias Gyro(rad/s): [{{ xest.biasGyro[0].toFixed(2) }}, {{
@@ -415,7 +485,7 @@ const close3D = () => {
                             {{ geoGranted ? '-- ACTIVE --' : '-X- INACTIVE -X-' }}
                         </span>
                         <button
-                            @click="requestGeoPermission"
+                            @click="requestGyroPermission"
                             style="margin-left: auto; padding: 5px 10px; background: #ff6600; color: #000; border: none; cursor: pointer; font-weight: bold;"
                         >
                             Enable GPS
