@@ -557,7 +557,7 @@ onMounted(() => {
                     debugData.rotationRate.gamma].map(x => (x || 0).toFixed(2)).join(', ') : 'null'}} deg/s
                     <br>
                     DVO: {{ DVOData }}
-                    Position: {{info_phone?.position?.toArray()?.map(x => x.toFixed(2))}}
+                    Position: {{info_phone?.position?.toArray()?.map(x => (x || 0).toFixed(2))}}
                 </span>
                 <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 16px;">
                     <button
@@ -616,28 +616,6 @@ onMounted(() => {
                 </div>
             </div>
 
-            <!-- State Vector -->
-            <div style="margin: 20px 0; padding: 15px; background: #0a0a2a; border: 1px solid #0099ff;">
-                <strong>🧭 Estimated State (15-DOF EKF):</strong>
-                <div style="margin-top: 10px; font-size: 12px; line-height: 1.8;">
-                    <strong style="color: #ffff00;">Position [m]:</strong><br>
-                    X: {{ xest.pos[0].toFixed(4) }} | Y: {{ xest.pos[1].toFixed(4) }} | Z: {{ xest.pos[2].toFixed(4)
-                    }}<br><br>
-                    <strong style="color: #ffff00;">Velocity [m/s]:</strong><br>
-                    X: {{ xest.vel[0].toFixed(4) }} | Y: {{ xest.vel[1].toFixed(4) }} | Z: {{ xest.vel[2].toFixed(4)
-                    }}<br><br>
-                    <strong style="color: #ffff00;">Attitude [rad]:</strong><br>
-                    Roll: {{ xest.att[0].toFixed(4) }} | Pitch: {{ xest.att[1].toFixed(4) }} | Yaw: {{
-                        xest.att[2].toFixed(4) }}<br><br>
-                    <strong style="color: #ffff00;">Accel Bias [m/s²]:</strong><br>
-                    X: {{ xest.biasAcc[0].toFixed(4) }} | Y: {{ xest.biasAcc[1].toFixed(4) }} | Z: {{
-                        xest.biasAcc[2].toFixed(4) }}<br><br>
-                    <strong style="color: #ffff00;">Gyro Bias [rad/s]:</strong><br>
-                    X: {{ xest.biasGyro[0].toFixed(4) }} | Y: {{ xest.biasGyro[1].toFixed(4) }} | Z: {{
-                        xest.biasGyro[2].toFixed(4) }}
-                </div>
-            </div>
-
             <!-- Raw Sensor Data -->
             <div style="margin-top: 40px; padding: 10px; background: #111; font-size: 12px;">
                 <strong>Raw Sensor Data:</strong><br><br>
@@ -671,6 +649,29 @@ onMounted(() => {
                     Alt: {{ latestGPS.pos?.[2]?.toFixed(2) || '0.00' }} m
                 </span>
             </div>
+
+            <!-- State Vector -->
+            <div style="margin: 20px 0; padding: 15px; background: #0a0a2a; border: 1px solid #0099ff;">
+                <strong>🧭 Estimated State (15-DOF EKF):</strong>
+                <div style="margin-top: 10px; font-size: 12px; line-height: 1.8;">
+                    <strong style="color: #ffff00;">Position [m]:</strong><br>
+                    X: {{ xest.pos[0].toFixed(4) }} | Y: {{ xest.pos[1].toFixed(4) }} | Z: {{ xest.pos[2].toFixed(4)
+                    }}<br><br>
+                    <strong style="color: #ffff00;">Velocity [m/s]:</strong><br>
+                    X: {{ xest.vel[0].toFixed(4) }} | Y: {{ xest.vel[1].toFixed(4) }} | Z: {{ xest.vel[2].toFixed(4)
+                    }}<br><br>
+                    <strong style="color: #ffff00;">Attitude [rad]:</strong><br>
+                    Roll: {{ xest.att[0].toFixed(4) }} | Pitch: {{ xest.att[1].toFixed(4) }} | Yaw: {{
+                        xest.att[2].toFixed(4) }}<br><br>
+                    <strong style="color: #ffff00;">Accel Bias [m/s²]:</strong><br>
+                    X: {{ xest.biasAcc[0].toFixed(4) }} | Y: {{ xest.biasAcc[1].toFixed(4) }} | Z: {{
+                        xest.biasAcc[2].toFixed(4) }}<br><br>
+                    <strong style="color: #ffff00;">Gyro Bias [rad/s]:</strong><br>
+                    X: {{ xest.biasGyro[0].toFixed(4) }} | Y: {{ xest.biasGyro[1].toFixed(4) }} | Z: {{
+                        xest.biasGyro[2].toFixed(4) }}
+                </div>
+            </div>
+
 
             <!-- Trajectory Preview -->
             <div

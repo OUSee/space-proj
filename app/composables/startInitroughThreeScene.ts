@@ -107,6 +107,8 @@ export const initRoughThreeScene = (
 
 	const gWorld = new THREE.Vector3(0, 0, -9.7);
 	const tmpQuat = new THREE.Quaternion();
+	const correctedQuat = new THREE.Quaternion();
+	const yawQuat = new THREE.Quaternion();
 
 	let velocity = new THREE.Vector3();
 	let position = new THREE.Vector3();
@@ -123,6 +125,8 @@ export const initRoughThreeScene = (
 
 		const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0.016;
 		lastTs = ts;
+
+		velocity.multiplyScalar(0.98); // Простое затухание
 
 		if (dt > 0) {
 			// correct do not touch
@@ -153,14 +157,12 @@ export const initRoughThreeScene = (
 				const magNorm = mag.clone().normalize();
 
 				// Создаём quaternion из gravity (pitch/roll) + magnetic (yaw)
-				const correctedQuat = new THREE.Quaternion();
 				correctedQuat.setFromUnitVectors(
 					new THREE.Vector3(0, 1, 0), // up vector
 					gravNorm,
 				);
 
 				// Применяем yaw из магнитного поля
-				const yawQuat = new THREE.Quaternion();
 				yawQuat.setFromAxisAngle(
 					new THREE.Vector3(0, 1, 0),
 					Math.atan2(magNorm.x, magNorm.z),
