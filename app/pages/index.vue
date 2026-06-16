@@ -51,6 +51,10 @@ const diagnostics = ref<{
     biasGyroMag: number;
 } | null>(null);
 const trajectory = ref<number[][]>([]);
+const covTraceHistory = ref<number[]>([]);
+const velMagHistory = ref<number[]>([]);
+const biasGyroHistory = ref<number[]>([]);
+const viewTab = ref<'metrics' | 'aekf'>('metrics');
 const frameCount = ref(0);
 const lastFrameTime = ref(performance.now());
 const mapEl = ref<HTMLDivElement | null>(null);
@@ -563,10 +567,32 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
             biasAccMag,
             biasGyroMag,
         };
+
+        covTraceHistory.value.push(trace ?? 0);
+        velMagHistory.value.push(velMag);
+        biasGyroHistory.value.push(biasGyroMag);
+        while (covTraceHistory.value.length > 40) covTraceHistory.value.shift();
+        while (velMagHistory.value.length > 40) velMagHistory.value.shift();
+        while (biasGyroHistory.value.length > 40) biasGyroHistory.value.shift();
     }
 
     frameCount.value++;
     lastFrameTime.value = now;
+}
+
+function renderSparkline(values: number[], width = 360, height = 120): string {
+    if (!values.length) return '';
+    const minVal = Math.min(...values);
+    const maxVal = Math.max(...values);
+    const range = maxVal - minVal || 1;
+    const step = width / Math.max(values.length - 1, 1);
+    return values
+        .map((value, index) => {
+            const x = index * step;
+            const y = height - ((value - minVal) / range) * (height - 12) - 6;
+            return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+        })
+        .join(' ');
 }
 
 function handleDeviceOrientation(event: DeviceOrientationEvent) {
@@ -867,6 +893,138 @@ onMounted(async () => {
             </div>
 
             <div
+                style="padding: 16px; background: #11181f; border: 1px solid #2f9fdf; border-radius: 10px; margin-bottom: 24px;">
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;">
+                    <div style="font-weight: 700;">EKF dashboard</div>
+                    <button
+                        @click="viewTab = 'metrics'"
+                        :style="{
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            border: '1px solid #2f9fdf',
+                            background: viewTab === 'metrics' ? '#2f9fdf' : '#0b1220',
+                            color: viewTab === 'metrics' ? '#000' : '#b8d8ff',
+                            cursor: 'pointer',
+                        }"
+                    >Metrics</button>
+                    <button
+                        @click="viewTab = 'aekf'"
+                        :style="{
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            border: '1px solid #2f9fdf',
+                            background: viewTab === 'aekf' ? '#2f9fdf' : '#0b1220',
+                            color: viewTab === 'aekf' ? '#000' : '#b8d8ff',
+                            cursor: 'pointer',
+                        }"
+                    >AEKF Graphic</button>
+                </div>
+
+                <div
+                    v-show="viewTab === 'metrics'"
+                    style="display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));"
+                >
+                    <div style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
+                        <div style="font-weight: 600; margin-bottom: 8px;">Key EKF numbers</div>
+                        <div style="display: grid; gap: 8px; font-size: 0.95rem;">
+                            <div>Cov trace: <strong>{{ diagnostics?.covTrace?.toFixed(1) || '–' }}</strong></div>
+                            <div>Velocity: <strong>{{ diagnostics?.velMag?.toFixed(3) || '–' }} m/s</strong></div>
+                            <div>Accel bias: <strong>{{ diagnostics?.biasAccMag?.toFixed(4) || '–' }}</strong></div>
+                            <div>Gyro bias: <strong>{{ diagnostics?.biasGyroMag?.toFixed(5) || '–' }}</strong></div>
+                            <div>Stationary: <strong
+                                    :style="{ color: diagnostics?.isStationary ? '#7fffd4' : '#ff6b6b' }"
+                                >{{ diagnostics?.isStationary ? 'YES' : 'NO' }}</strong></div>
+                        </div>
+                    </div>
+                    <div style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
+                        <div style="font-weight: 600; margin-bottom: 8px;">EKF trend</div>
+                        <div style="font-size: 0.9rem; color: #b8d8ff; line-height: 1.6;">
+                            This tab surfaces the same real-time measurements that drive the filter. It is useful when
+                            you want a quick overview of whether the EKF is converging and how busy the filter state is.
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    v-show="viewTab === 'aekf'"
+                    style="display: grid; gap: 16px;"
+                >
+                    <div style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
+                        <div style="font-weight: 600; margin-bottom: 12px;">AEKF confidence timeline</div>
+                        <svg
+                            width="100%"
+                            height="160"
+                            viewBox="0 0 360 160"
+                            style="background: #03070d; border-radius: 10px; display: block;"
+                        >
+                            <rect
+                                x="0"
+                                y="0"
+                                width="360"
+                                height="160"
+                                fill="#03070d"
+                            />
+                            <path
+                                :d="renderSparkline(covTraceHistory, 360, 120)"
+                                fill="none"
+                                stroke="#7fffd4"
+                                stroke-width="2"
+                            />
+                            <path
+                                :d="renderSparkline(velMagHistory, 360, 120)"
+                                fill="none"
+                                stroke="#ffb800"
+                                stroke-width="2"
+                                opacity="0.9"
+                            />
+                            <path
+                                :d="renderSparkline(biasGyroHistory, 360, 120)"
+                                fill="none"
+                                stroke="#ff6b6b"
+                                stroke-width="2"
+                                opacity="0.8"
+                            />
+                            <line
+                                x1="0"
+                                y1="150"
+                                x2="360"
+                                y2="150"
+                                stroke="#2f9fdf"
+                                stroke-width="0.5"
+                                opacity="0.4"
+                            />
+                        </svg>
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; color: #b8d8ff; margin-top: 10px;">
+                            <span>Trace = uncertainty, yellow = speed, red = gyro bias</span>
+                            <span :style="{ color: diagnostics?.isStationary ? '#7fffd4' : '#ff6b6b' }">{{
+                                diagnostics?.isStationary ? 'Stationary' : 'Moving' }}</span>
+                        </div>
+                    </div>
+                    <div style="display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+                        <div
+                            style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
+                            <div style="font-size: 0.92rem; font-weight: 600; margin-bottom: 8px;">Latest trace</div>
+                            <div style="font-size: 1.5rem; color: #7fffd4;">{{ diagnostics?.covTrace?.toFixed(1) || '–'
+                                }}</div>
+                        </div>
+                        <div
+                            style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
+                            <div style="font-size: 0.92rem; font-weight: 600; margin-bottom: 8px;">Current speed</div>
+                            <div style="font-size: 1.5rem; color: #ffb800;">{{ diagnostics?.velMag?.toFixed(2) || '–' }}
+                                m/s</div>
+                        </div>
+                        <div
+                            style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
+                            <div style="font-size: 0.92rem; font-weight: 600; margin-bottom: 8px;">Gyro bias</div>
+                            <div style="font-size: 1.5rem; color: #ff6b6b;">{{ diagnostics?.biasGyroMag?.toFixed(5) ||
+                                '–' }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div
                 style="display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-bottom: 24px;">
                 <div style="padding: 16px; background: #11181f; border: 1px solid #2f9fdf; border-radius: 10px;">
                     <strong>EKF state</strong>
@@ -874,9 +1032,9 @@ onMounted(async () => {
                         <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
                             {{ xest.pos[2].toFixed(3) }}</div>
                         <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
-                            }}, {{ xest.vel[2].toFixed(3) }}</div>
+                        }}, {{ xest.vel[2].toFixed(3) }}</div>
                         <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
-                            }}, {{ xest.att[2].toFixed(3) }}</div>
+                        }}, {{ xest.att[2].toFixed(3) }}</div>
                         <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
                             xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
                         <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{

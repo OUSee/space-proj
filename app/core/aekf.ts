@@ -1,14 +1,15 @@
 import { MatrixUtils } from './matrix';
+import { Quaternion, Euler, Vector3 } from 'three';
 
 export class AEKFFilter {
-	private x: number[]; // state vector [pos3, vel3, att3, biasAcc3, biasGyro3]
-	private P: number[][]; // covariance matrix (15x15)
-	private Q: number[][]; // process noise (15x15)
+	private x: number[]; // state vector [pos3, vel3, quat4, biasAcc3, biasGyro3]
+	private P: number[][]; // covariance matrix (16x16)
+	private Q: number[][]; // process noise (16x16)
 	private baseQ: number[][]; // baseline Q for adaptation
-	private procNoiseScale = 1.0;
 	private R: number[][]; // measurement noise (3x3 for position)
 	private baseR: number[][]; // baseline R for adaptation
 	private measNoiseScale = 1.0;
+	private procNoiseScale = 1.0;
 	private nisHistory: number[] = [];
 	private g: number = 9.81; // gravity magnitude (m/s²)
 
@@ -30,6 +31,30 @@ export class AEKFFilter {
 		this.baseR = MatrixUtils.copy(R);
 	}
 
+	private quaternionFromState(): Quaternion {
+		return new Quaternion(
+			this.x[7] ?? 0,
+			this.x[8] ?? 0,
+			this.x[9] ?? 0,
+			this.x[6] ?? 1,
+		);
+	}
+
+	private writeQuaternionToState(q: Quaternion): void {
+		q.normalize();
+		this.x[6] = q.w;
+		this.x[7] = q.x;
+		this.x[8] = q.y;
+		this.x[9] = q.z;
+	}
+
+	private getEulerFromQuaternion(): [number, number, number] {
+		const q = this.quaternionFromState();
+		const e = new Euler(0, 0, 0, 'ZYX');
+		e.setFromQuaternion(q);
+		return [e.x, e.y, e.z];
+	}
+
 	/**
 	 * Prediction step using IMU measurements.
 	 * @param accel  Acceleration in m/s² (body frame) – should have static bias removed
@@ -44,9 +69,9 @@ export class AEKFFilter {
 		// Extract state components
 		let [px, py, pz] = this.x.slice(0, 3);
 		let [vx, vy, vz] = this.x.slice(3, 6);
-		let [roll, pitch, yaw] = this.x.slice(6, 9);
-		let [bax, bay, baz] = this.x.slice(9, 12);
-		let [bgx, bgy, bgz] = this.x.slice(12, 15);
+		let [qw, qx, qy, qz] = this.x.slice(6, 10);
+		let [bax, bay, baz] = this.x.slice(10, 13);
+		let [bgx, bgy, bgz] = this.x.slice(13, 16);
 
 		// Remove estimated biases from sensor readings
 		const ax = accel[0] - bax!;
@@ -55,28 +80,21 @@ export class AEKFFilter {
 		const gx = gyro[0] - bgx!;
 		const gy = gyro[1] - bgy!;
 		const gz = gyro[2] - bgz!;
-		// Update attitude (Euler integration – simple for demo)
-		roll! += gx * dt;
-		pitch! += gy * dt;
-		yaw! += gz * dt;
-		// Build rotation matrix from body to world (ZYX Euler)
-		const cr = Math.cos(roll!),
-			sr = Math.sin(roll!);
-		const cp = Math.cos(pitch!),
-			sp = Math.sin(pitch!);
-		const cy = Math.cos(yaw!),
-			sy = Math.sin(yaw!);
-		const R_wb = [
-			[cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
-			[sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
-			[-sp, cp * sr, cp * cr],
-		];
 
-		// Transform acceleration to world frame and subtract gravity
-		const aw_x = R_wb[0]![0]! * ax + R_wb[0]![1]! * ay + R_wb[0]![2]! * az;
-		const aw_y = R_wb[1]![0]! * ax + R_wb[1]![1]! * ay + R_wb[1]![2]! * az;
-		const aw_z =
-			R_wb[2]![0]! * ax + R_wb[2]![1]! * ay + R_wb[2]![2]! * az - this.g;
+		const quat = new Quaternion(qx!, qy!, qz!, qw!);
+		const omega = new Quaternion(gx, gy, gz, 0);
+		const qDot = quat.clone().multiply(omega).multiplyScalar(0.5);
+		quat.x += qDot.x * dt;
+		quat.y += qDot.y * dt;
+		quat.z += qDot.z * dt;
+		quat.w += qDot.w * dt;
+		quat.normalize();
+
+		const bodyAccel = new Vector3(ax, ay, az);
+		const worldAccel = bodyAccel.applyQuaternion(quat);
+		const aw_x = worldAccel.x;
+		const aw_y = worldAccel.y;
+		const aw_z = worldAccel.z - this.g;
 		// Update velocity and position
 		vx! += aw_x * dt;
 		vy! += aw_y * dt;
@@ -93,9 +111,10 @@ export class AEKFFilter {
 			vx!,
 			vy!,
 			vz!,
-			roll!,
-			pitch!,
-			yaw!,
+			quat.w,
+			quat.x,
+			quat.y,
+			quat.z,
 			bax!,
 			bay!,
 			baz!,
@@ -134,17 +153,37 @@ export class AEKFFilter {
 		}
 
 		// ----- Covariance prediction (linearised) -----
-		const F = MatrixUtils.eye(15);
+		const F = MatrixUtils.eye(16);
 		// Position from velocity
 		for (let i = 0; i < 3; i++) F[i]![i + 3] = dt;
 		// Velocity from accelerometer bias
-		for (let i = 0; i < 3; i++) F[i + 3]![i + 9] = -dt;
-		// Attitude error → velocity error via gravity coupling
-		// This helps the filter understand that roll/pitch errors create velocity drift.
-		F[3]![7] = dt * this.g;
-		F[4]![6] = -dt * this.g;
-		// Attitude from gyro bias
-		for (let i = 0; i < 3; i++) F[i + 6]![i + 12] = -dt;
+		for (let i = 0; i < 3; i++) F[i + 3]![i + 10] = -dt;
+		// Quaternion attitude propagation linearisation
+		const omegaMat = [
+			[0, -gx, -gy, -gz],
+			[gx, 0, gz, -gy],
+			[gy, -gz, 0, gx],
+			[gz, gy, -gx, 0],
+		];
+		for (let r = 0; r < 4; r++) {
+			for (let c = 0; c < 4; c++) {
+				F[6 + r]![6 + c] += 0.5 * dt * omegaMat[r]![c]!;
+			}
+		}
+		// Quaternion bias coupling from gyro bias states
+		const q = quat;
+		F[6]![13] = 0;
+		F[7]![13] = -0.5 * dt * q.w;
+		F[8]![13] = -0.5 * dt * q.z;
+		F[9]![13] = 0.5 * dt * q.y;
+		F[6]![14] = 0.5 * dt * q.y;
+		F[7]![14] = 0.5 * dt * q.z;
+		F[8]![14] = -0.5 * dt * q.w;
+		F[9]![14] = -0.5 * dt * q.x;
+		F[6]![15] = 0.5 * dt * q.z;
+		F[7]![15] = -0.5 * dt * q.y;
+		F[8]![15] = 0.5 * dt * q.x;
+		F[9]![15] = -0.5 * dt * q.w;
 
 		const accelMag = Math.sqrt(ax * ax + ay * ay + az * az);
 		const gyroMag = Math.sqrt(gx * gx + gy * gy + gz * gz);
@@ -203,9 +242,9 @@ export class AEKFFilter {
 	 */
 	updatePosition(pos: [number, number, number], R_pos: number[][]): void {
 		const H = [
-			[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-			[0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-			[0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+			[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+			[0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+			[0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 		];
 
 		const z = pos;
@@ -290,9 +329,9 @@ export class AEKFFilter {
 	updateVelocity(R_vel: number[][]): void {
 		// H extracts velocity [3,4,5] from state
 		const H = [
-			[0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-			[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-			[0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+			[0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+			[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+			[0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 		];
 
 		// Measurement: velocity should be zero
@@ -310,10 +349,10 @@ export class AEKFFilter {
 
 		// Update state
 		const Ky = MatrixUtils.matrixVectorMultiply(K, y);
-		for (let i = 0; i < 15; i++) this.x[i]! += Ky[i]!;
+		for (let i = 0; i < 16; i++) this.x[i]! += Ky[i]!;
 
 		// Joseph form covariance update
-		const I = MatrixUtils.eye(15);
+		const I = MatrixUtils.eye(16);
 		const KH = MatrixUtils.multiply(K, H);
 		const I_KH = MatrixUtils.subtract(I, KH);
 		const P1 = MatrixUtils.multiply(
@@ -353,13 +392,13 @@ export class AEKFFilter {
 		return [this.x[3]!, this.x[4]!, this.x[5]!];
 	}
 	getAttitude(): [number, number, number] {
-		return [this.x[6]!, this.x[7]!, this.x[8]!];
+		return this.getEulerFromQuaternion();
 	}
 	getBiasAcc(): [number, number, number] {
-		return [this.x[9]!, this.x[10]!, this.x[11]!];
+		return [this.x[10]!, this.x[11]!, this.x[12]!];
 	}
 	getBiasGyro(): [number, number, number] {
-		return [this.x[12]!, this.x[13]!, this.x[14]!];
+		return [this.x[13]!, this.x[14]!, this.x[15]!];
 	}
 
 	/**
@@ -402,8 +441,8 @@ export class AEKFFilter {
 			}
 		}
 
-		// Clamp accel bias (indices 9..11)
-		for (let i = 9; i <= 11; i++) {
+		// Clamp accel bias (indices 10..12)
+		for (let i = 10; i <= 12; i++) {
 			if (Math.abs(this.x[i]!) > bacc_max) {
 				this.x[i] = Math.sign(this.x[i]!) * bacc_max;
 				if (
@@ -415,8 +454,8 @@ export class AEKFFilter {
 			}
 		}
 
-		// Clamp gyro bias (indices 12..14)
-		for (let i = 12; i <= 14; i++) {
+		// Clamp gyro bias (indices 13..15)
+		for (let i = 13; i <= 15; i++) {
 			if (Math.abs(this.x[i]!) > bgyro_max) {
 				this.x[i] = Math.sign(this.x[i]!) * bgyro_max;
 				if (
