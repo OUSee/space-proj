@@ -285,10 +285,10 @@ export class AEKFFilter {
 
 		// Update state
 		const Ky = MatrixUtils.matrixVectorMultiply(K, y);
-		for (let i = 0; i < 15; i++) this.x[i]! += Ky[i]!;
+		for (let i = 0; i < 16; i++) this.x[i]! += Ky[i]!;
 
 		// Joseph form covariance update
-		const I = MatrixUtils.eye(15);
+		const I = MatrixUtils.eye(16);
 		const KH = MatrixUtils.multiply(K, H);
 		const I_KH = MatrixUtils.subtract(I, KH);
 		const P1 = MatrixUtils.multiply(

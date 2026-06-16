@@ -340,6 +340,23 @@ watch(
                 currentFilteredLatLng.value = filteredGeo;
                 if (recording.value) appendTrackPoint(filteredGeo);
                 updateMapView(c.latitude, c.longitude, filteredGeo);
+                // Diagnostics: refresh UI metrics after every GPS position update too.
+                const vel = filterInstance.getVelocity();
+                diagnostics.value = {
+                    covTrace: filterInstance.getCovarianceTrace(),
+                    velMag: Math.sqrt(vel[0] ** 2 + vel[1] ** 2 + vel[2] ** 2),
+                    isStationary: false,
+                    biasAccMag: Math.sqrt(
+                        filterInstance.getBiasAcc()[0] ** 2 +
+                        filterInstance.getBiasAcc()[1] ** 2 +
+                        filterInstance.getBiasAcc()[2] ** 2,
+                    ),
+                    biasGyroMag: Math.sqrt(
+                        filterInstance.getBiasGyro()[0] ** 2 +
+                        filterInstance.getBiasGyro()[1] ** 2 +
+                        filterInstance.getBiasGyro()[2] ** 2,
+                    ),
+                };
                 // Diagnostics: log GPS vs filtered occasionally
                 console.log('GPS update', { raw: { lat: c.latitude, lon: c.longitude, acc: c.accuracy }, filtered: filteredGeo });
             }
@@ -453,6 +470,29 @@ function initFilter() {
     const R = MatrixUtils.eye(3).map((row) => row.map(() => 5.0));
     filterInstance = new AEKFFilter(initialX, initialP, Q, R);
     status.value = 'Filter ready – listening to IMU';
+
+    // Initialize UI diagnostics immediately when the filter is created.
+    xest.value = {
+        pos: filterInstance.getPosition(),
+        vel: filterInstance.getVelocity(),
+        att: filterInstance.getAttitude(),
+        biasAcc: filterInstance.getBiasAcc(),
+        biasGyro: filterInstance.getBiasGyro(),
+    };
+    const vel = xest.value.vel;
+    const biasAccMag = Math.sqrt(
+        xest.value.biasAcc[0] ** 2 + xest.value.biasAcc[1] ** 2 + xest.value.biasAcc[2] ** 2,
+    );
+    const biasGyroMag = Math.sqrt(
+        xest.value.biasGyro[0] ** 2 + xest.value.biasGyro[1] ** 2 + xest.value.biasGyro[2] ** 2,
+    );
+    diagnostics.value = {
+        covTrace: filterInstance.getCovarianceTrace(),
+        velMag: Math.sqrt(vel[0] * vel[0] + vel[1] * vel[1] + vel[2] * vel[2]),
+        isStationary: false,
+        biasAccMag,
+        biasGyroMag,
+    };
 }
 
 // ----------------------------- IMU Event Handler -----------------------------
@@ -1010,7 +1050,7 @@ onMounted(async () => {
                             style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
                             <div style="font-size: 0.92rem; font-weight: 600; margin-bottom: 8px;">Latest trace</div>
                             <div style="font-size: 1.5rem; color: #7fffd4;">{{ diagnostics?.covTrace?.toFixed(1) || '–'
-                            }}</div>
+                                }}</div>
                         </div>
                         <div
                             style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
@@ -1036,9 +1076,9 @@ onMounted(async () => {
                         <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
                             {{ xest.pos[2].toFixed(3) }}</div>
                         <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
-                            }}, {{ xest.vel[2].toFixed(3) }}</div>
+                        }}, {{ xest.vel[2].toFixed(3) }}</div>
                         <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
-                            }}, {{ xest.att[2].toFixed(3) }}</div>
+                        }}, {{ xest.att[2].toFixed(3) }}</div>
                         <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
                             xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
                         <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{
