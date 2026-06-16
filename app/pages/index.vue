@@ -343,6 +343,9 @@ watch(
                 // Diagnostics: log GPS vs filtered occasionally
                 console.log('GPS update', { raw: { lat: c.latitude, lon: c.longitude, acc: c.accuracy }, filtered: filteredGeo });
             }
+        } else {
+            // Show raw GPS location even before the filter is initialized
+            updateMapView(c.latitude, c.longitude);
         }
 
         geoGranted.value = true;
@@ -411,19 +414,20 @@ async function calibrateSensors(): Promise<void> {
 }
 
 function initFilter() {
-    const initialX = new Array(15).fill(0);
+    const initialX = new Array(16).fill(0);
+    initialX[6] = 1.0; // identity quaternion
     if (calibrationData.value) {
-        initialX[9] = calibrationData.value.accelMean[0]!;
-        initialX[10] = calibrationData.value.accelMean[1]!;
-        initialX[11] = calibrationData.value.accelMean[2]! - 9.81;
-        initialX[12] = calibrationData.value.gyroMean[0]!;
-        initialX[13] = calibrationData.value.gyroMean[1]!;
-        initialX[14] = calibrationData.value.gyroMean[2]!;
+        initialX[10] = calibrationData.value.accelMean[0]!;
+        initialX[11] = calibrationData.value.accelMean[1]!;
+        initialX[12] = calibrationData.value.accelMean[2]! - 9.81;
+        initialX[13] = calibrationData.value.gyroMean[0]!;
+        initialX[14] = calibrationData.value.gyroMean[1]!;
+        initialX[15] = calibrationData.value.gyroMean[2]!;
         console.log('Calibration data:', {
             accelMean: calibrationData.value.accelMean,
             gyroMean: calibrationData.value.gyroMean,
-            initialBiasAcc: [initialX[9], initialX[10], initialX[11]],
-            initialBiasGyro: [initialX[12], initialX[13], initialX[14]],
+            initialBiasAcc: [initialX[10], initialX[11], initialX[12]],
+            initialBiasGyro: [initialX[13], initialX[14], initialX[15]],
         });
     }
     if (latestGPS.value && refSet) {
@@ -442,10 +446,10 @@ function initFilter() {
         filterHasGpsFix.value = true;
         console.log('Initial filter position set from GPS:', initialPos, latestGPS.value);
     }
-    const initialP = MatrixUtils.eye(15).map((row) => row.map(() => 1.0));
+    const initialP = MatrixUtils.eye(16).map((row) => row.map(() => 1.0));
     // Increased Q to reduce trust in IMU integration (prevent bias blowup)
     // Q ~ 0.5 means we expect significant process noise in position/velocity/attitude
-    const Q = MatrixUtils.eye(15).map((row) => row.map(() => 0.5));
+    const Q = MatrixUtils.eye(16).map((row) => row.map(() => 0.5));
     const R = MatrixUtils.eye(3).map((row) => row.map(() => 5.0));
     filterInstance = new AEKFFilter(initialX, initialP, Q, R);
     status.value = 'Filter ready – listening to IMU';
