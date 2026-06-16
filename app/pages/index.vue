@@ -55,6 +55,7 @@ const frameCount = ref(0);
 const lastFrameTime = ref(performance.now());
 const mapEl = ref<HTMLDivElement | null>(null);
 const mapReady = ref(false);
+const filterHasGpsFix = ref(false);
 let map: LeafletMap | null = null;
 let rawMarker: Marker | null = null;
 let filteredMarker: Marker | null = null;
@@ -316,12 +317,13 @@ watch(
             [0, 0, 10.0],
         ];
 
-        if (!filterInstance && calibrationCompleted.value) {
+        if (!filterInstance && calibrationCompleted.value && latestGPS.value && refSet) {
             initFilter();
         }
 
         if (filterInstance) {
             filterInstance.updatePosition(enu, R_pos);
+            filterHasGpsFix.value = true;
             if (refSet) {
                 const filteredGeo = enuToGeodetic(
                     filterInstance.getPosition()[0],
@@ -370,8 +372,12 @@ async function calibrateSensors(): Promise<void> {
                 // mark calibration finished and clear the calibrating flag so IMU processing resumes
                 calibrationCompleted.value = true;
                 isCalibrating.value = false;
-                status.value = '✅ Calibration done. Starting filter...';
-                initFilter();
+                if (latestGPS.value && refSet) {
+                    status.value = '✅ Calibration done. Starting filter with GPS fix...';
+                    initFilter();
+                } else {
+                    status.value = '✅ Calibration done. Waiting for GPS fix before starting filter...';
+                }
                 resolve();
                 return;
             }
@@ -415,6 +421,22 @@ function initFilter() {
             initialBiasAcc: [initialX[9], initialX[10], initialX[11]],
             initialBiasGyro: [initialX[12], initialX[13], initialX[14]],
         });
+    }
+    if (latestGPS.value && refSet) {
+        const initialPos = geodeticToEnu(
+            latestGPS.value.lat,
+            latestGPS.value.lon,
+            latestGPS.value.alt,
+            refLat,
+            refLon,
+            refAlt,
+        );
+        initialX[0] = initialPos[0];
+        initialX[1] = initialPos[1];
+        initialX[2] = initialPos[2];
+        currentFilteredLatLng.value = latestGPS.value;
+        filterHasGpsFix.value = true;
+        console.log('Initial filter position set from GPS:', initialPos, latestGPS.value);
     }
     const initialP = MatrixUtils.eye(15).map((row) => row.map(() => 1.0));
     // Increased Q to reduce trust in IMU integration (prevent bias blowup)
@@ -507,7 +529,7 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
     trajectory.value.push([...xest.value.pos]);
     if (trajectory.value.length > 2000) trajectory.value.shift();
 
-    if (refSet) {
+    if (refSet && filterHasGpsFix.value) {
         const filteredGeo = enuToGeodetic(
             xest.value.pos[0],
             xest.value.pos[1],
@@ -852,9 +874,9 @@ onMounted(async () => {
                         <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
                             {{ xest.pos[2].toFixed(3) }}</div>
                         <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
-                        }}, {{ xest.vel[2].toFixed(3) }}</div>
+                            }}, {{ xest.vel[2].toFixed(3) }}</div>
                         <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
-                        }}, {{ xest.att[2].toFixed(3) }}</div>
+                            }}, {{ xest.att[2].toFixed(3) }}</div>
                         <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
                             xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
                         <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{
