@@ -104,7 +104,9 @@ export class AEKFFilter {
 		try {
 			const beforeVel = [vx!, vy!, vz!];
 			const afterVel = [this.x[3]!, this.x[4]!, this.x[5]!];
-			const Pdiag = this.P.map((row, i) => (row && row[i] !== undefined ? row[i] : 0));
+			const Pdiag = this.P.map((row, i) =>
+				row && row[i] !== undefined ? row[i] : 0,
+			);
 			const diagTrace = this.getCovarianceTrace();
 			const dbg = {
 				event: 'predict',
@@ -187,7 +189,9 @@ export class AEKFFilter {
 
 		// Diagnostics snapshot for position update
 		try {
-			const Pdiag = this.P.map((row, i) => (row && row[i] !== undefined ? row[i] : 0));
+			const Pdiag = this.P.map((row, i) =>
+				row && row[i] !== undefined ? row[i] : 0,
+			);
 			const dbg = {
 				event: 'updatePosition',
 				posMeasured: pos,
@@ -249,7 +253,9 @@ export class AEKFFilter {
 
 		// Diagnostics snapshot for velocity update (ZUPT)
 		try {
-			const Pdiag = this.P.map((row, i) => (row && row[i] !== undefined ? row[i] : 0));
+			const Pdiag = this.P.map((row, i) =>
+				row && row[i] !== undefined ? row[i] : 0,
+			);
 			const dbg = {
 				event: 'updateVelocity',
 				stateVel: [this.x[3], this.x[4], this.x[5]],
