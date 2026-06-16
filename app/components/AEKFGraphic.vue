@@ -289,9 +289,9 @@ const nisVals = computed(() => history.value.map((d: any) => d.nis).filter((v: a
 
             <div style="padding:10px; background:#07101a; border-radius:8px; border:1px solid #173a56;">
                 <div style="font-weight:600">Matrices (diag)</div>
-                <div style="font-size:0.9rem; color:#b8d8ff; margin-top:8px">P diag: {{diag.Pdiag ?
+                <div style="font-size:0.9rem; color:#b8d8ff; margin-top:8px">P diag: {{diag?.Pdiag ?
                     diag.Pdiag.slice(0, 6).map(x => x.toFixed(2)).join(', ') : '–'}}</div>
-                <div style="font-size:0.9rem; color:#b8d8ff;">Q scale: {{ diag.procNoiseScale?.toFixed ?
+                <div style="font-size:0.9rem; color:#b8d8ff;">Q scale: {{ diag?.procNoiseScale?.toFixed ?
                     diag.procNoiseScale.toFixed(2) : '–' }}</div>
             </div>
         </div>
