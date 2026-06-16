@@ -17,6 +17,7 @@ const gyroGranted = ref(false);
 const geoGranted = ref(false);
 const show3D = ref(false);
 const isCalibrating = ref(false);
+const calibrationCompleted = ref(false);
 const calibrationData = ref<{ accelMean: number[]; gyroMean: number[] } | null>(null);
 const info_phone = ref<any>(null);
 const info_waccel = ref<any>(null);
@@ -315,7 +316,7 @@ watch(
             [0, 0, 10.0],
         ];
 
-        if (!filterInstance) {
+        if (!filterInstance && calibrationCompleted.value) {
             initFilter();
         }
 
@@ -366,6 +367,7 @@ async function calibrateSensors(): Promise<void> {
                         .map((v) => v / gyroSamples.length)
                     : [0, 0, 0];
                 calibrationData.value = { accelMean, gyroMean };
+                calibrationCompleted.value = true;
                 status.value = '✅ Calibration done. Starting filter...';
                 initFilter();
                 resolve();
@@ -448,7 +450,7 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
         timestamp: performance.now(),
     };
 
-    if (!filterInstance || !gyroGranted.value || isCalibrating.value) return;
+    if (!filterInstance || !gyroGranted.value || isCalibrating.value || !calibrationCompleted.value) return;
 
     const now = performance.now();
     const dt = lastTimestamp ? Math.min(0.1, (now - lastTimestamp) / 1000) : 0.01;
@@ -733,11 +735,34 @@ onMounted(async () => {
                 </div>
 
                 <div style="padding: 16px; background: #11181f; border: 1px solid #2f9fdf; border-radius: 10px;">
+                    <strong>Calibration</strong>
+                    <div style="margin-top: 12px; display: grid; gap: 10px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                            <span>Status</span>
+                            <span
+                                :style="{ color: calibrationCompleted ? '#7fffd4' : isCalibrating ? '#ffb800' : '#ff6b6b' }"
+                            >
+                                {{ isCalibrating ? 'CALIBRATING...' : calibrationCompleted ? 'COMPLETE' : 'REQUIRED' }}
+                            </span>
+                        </div>
+                        <button
+                            @click="calibrateSensors"
+                            :disabled="isCalibrating || calibrationCompleted"
+                            style="padding: 10px; background: #d946a6; color: #000; border: none; border-radius: 8px; cursor: pointer; opacity: 0.9;"
+                            :style="{ opacity: isCalibrating || calibrationCompleted ? 0.5 : 0.9, cursor: isCalibrating || calibrationCompleted ? 'not-allowed' : 'pointer' }"
+                        >{{ isCalibrating ? 'Calibrating...' : calibrationCompleted ? 'Recalibrate' : 'Start
+                            Calibration' }}</button>
+                    </div>
+                </div>
+
+                <div style="padding: 16px; background: #11181f; border: 1px solid #2f9fdf; border-radius: 10px;">
                     <strong>Route Control</strong>
                     <div style="margin-top: 12px; display: grid; gap: 10px;">
                         <button
                             @click="toggleRecording"
+                            :disabled="!calibrationCompleted"
                             style="padding: 10px; background: #ffb800; color: #000; border: none; border-radius: 8px; cursor: pointer;"
+                            :style="{ opacity: !calibrationCompleted ? 0.5 : 1, cursor: !calibrationCompleted ? 'not-allowed' : 'pointer' }"
                         >{{ recordingLabel }}</button>
                         <button
                             @click="clearTrack"
@@ -803,9 +828,9 @@ onMounted(async () => {
                         <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
                             {{ xest.pos[2].toFixed(3) }}</div>
                         <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
-                            }}, {{ xest.vel[2].toFixed(3) }}</div>
+                        }}, {{ xest.vel[2].toFixed(3) }}</div>
                         <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
-                            }}, {{ xest.att[2].toFixed(3) }}</div>
+                        }}, {{ xest.att[2].toFixed(3) }}</div>
                         <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
                             xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
                         <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{
