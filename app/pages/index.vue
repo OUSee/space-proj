@@ -805,8 +805,10 @@ onMounted(async () => {
                             style="width: 100%; height: 420px;"
                         ></div>
                         <!-- Map legend -->
-                        <div
-                            style="position: absolute; top: 12px; right: 12px; z-index: 1100; background: rgba(12,17,24,0.95); border: 1px solid #2f9fdf; padding: 8px 10px; border-radius: 8px; color: #b8d8ff; font-size: 0.9rem;">
+                    </div>
+                    <div
+                        style="display: flex; align-items: start; gap: 10px; flex-wrap: wrap; color: #b8d8ff; font-size: 0.95rem;">
+                        <div style="font-size: 0.9rem;">
                             <div style="font-weight:600; margin-bottom:6px;">Legend</div>
                             <div style="display:flex; gap:8px; align-items:center;">
                                 <span
@@ -827,12 +829,7 @@ onMounted(async () => {
                                 <span>Recording control</span>
                             </div>
                         </div>
-                    </div>
-                    <div
-                        style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: #b8d8ff; font-size: 0.95rem;">
-                        <span>Filtered route is <strong>{{ showFiltered ? 'visible' : 'hidden' }}</strong>.</span>
-                        <span>Raw track remains visible in blue.</span>
-                        <span style="display:flex; align-items:center; gap:8px;">
+                        <span style="display:flex; align-items:center; gap:8px; margin-left: auto;">
                             <label style="font-size:0.95rem;">Map follow:</label>
                             <select
                                 v-model="mapFollowMode"
