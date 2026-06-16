@@ -161,6 +161,19 @@ async function initMap() {
 
     mapInitialized = true;
     mapReady.value = true;
+
+    // Critical: force Leaflet to recalculate container size (very common cause of blank maps)
+    setTimeout(() => {
+        if (map) {
+            map.invalidateSize();
+            // Optional: set a default view if we have no GPS yet
+            if (latestGPS.value) {
+                map.setView([latestGPS.value.lat, latestGPS.value.lon], 16);
+            } else {
+                map.setView([59.93, 30.3], 12); // fallback (e.g. your city)
+            }
+        }
+    }, 120);
 }
 
 watch(showFiltered, (value) => {
@@ -603,6 +616,12 @@ const startRoughDemo = async () => {
     roughDemoInstance = inst;
 };
 
+
+onMounted(async () => {
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 30));
+    await initMap();
+});
 </script>
 
 <template>
@@ -681,14 +700,14 @@ const startRoughDemo = async () => {
                 style="padding: 16px; background: #11181f; border: 1px solid #2f9fdf; border-radius: 10px; margin-bottom: 24px;">
                 <div style="display: grid; gap: 10px;">
                     <div style="font-weight: bold;">Map view</div>
-                    <div style="min-height: 420px; border-radius: 12px; overflow: hidden; background: #000;">
+                    <div
+                        style="min-height: 420px; border-radius: 12px; overflow: hidden; background: #000; position: relative;">
                         <div
                             v-if="!mapReady"
-                            style="height: 420px; display: flex; align-items: center; justify-content: center; color: #7f9cff;"
+                            style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #7f9cff; background: rgba(0, 0, 0, 0.65); font-size: 1.05rem; z-index: 10;"
                         >Loading map…</div>
                         <div
                             ref="mapEl"
-                            v-else
                             id="map"
                             style="width: 100%; height: 420px;"
                         ></div>
@@ -708,9 +727,9 @@ const startRoughDemo = async () => {
                         <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
                             {{ xest.pos[2].toFixed(3) }}</div>
                         <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
-                        }}, {{ xest.vel[2].toFixed(3) }}</div>
+                            }}, {{ xest.vel[2].toFixed(3) }}</div>
                         <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
-                        }}, {{ xest.att[2].toFixed(3) }}</div>
+                            }}, {{ xest.att[2].toFixed(3) }}</div>
                         <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
                             xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
                         <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{
