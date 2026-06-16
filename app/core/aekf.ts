@@ -7,6 +7,10 @@ export class AEKFFilter {
 	private R: number[][]; // measurement noise (3x3 for position)
 	private g: number = 9.81; // gravity magnitude (m/s²)
 
+	// Optional callback for debugging/telemetry. If set, receives a
+	// snapshot object after predict/update steps. Also logs to console.debug.
+	public debugCallback?: (d: Record<string, any>) => void;
+
 	constructor(
 		initialX: number[],
 		initialP: number[][],
@@ -96,6 +100,30 @@ export class AEKFFilter {
 		// Prevent runaway state values (sanity clamp)
 		this.sanitizeState();
 
+		// Diagnostics snapshot for this prediction step
+		try {
+			const beforeVel = [vx!, vy!, vz!];
+			const afterVel = [this.x[3]!, this.x[4]!, this.x[5]!];
+			const Pdiag = this.P.map((row, i) => (row && row[i] !== undefined ? row[i] : 0));
+			const diagTrace = this.getCovarianceTrace();
+			const dbg = {
+				event: 'predict',
+				dt,
+				rawAccel: accel,
+				accelBias: [bax, bay, baz],
+				bodyAccelNoBias: [ax, ay, az],
+				worldAccel: [aw_x, aw_y, aw_z],
+				beforeVel,
+				afterVel,
+				Pdiag,
+				diagTrace,
+			};
+			console.debug('AEKF', dbg);
+			if (this.debugCallback) this.debugCallback(dbg);
+		} catch (e) {
+			// ignore diagnostics errors
+		}
+
 		// ----- Covariance prediction (linearised) -----
 		const F = MatrixUtils.eye(15);
 		// Position from velocity
@@ -156,6 +184,20 @@ export class AEKFFilter {
 
 		// Sanity clamp after measurement update
 		this.sanitizeState();
+
+		// Diagnostics snapshot for position update
+		try {
+			const Pdiag = this.P.map((row, i) => (row && row[i] !== undefined ? row[i] : 0));
+			const dbg = {
+				event: 'updatePosition',
+				posMeasured: pos,
+				statePos: [this.x[0], this.x[1], this.x[2]],
+				Pdiag,
+				diagTrace: this.getCovarianceTrace(),
+			};
+			console.debug('AEKF', dbg);
+			if (this.debugCallback) this.debugCallback(dbg);
+		} catch (e) {}
 	}
 
 	/**
@@ -204,6 +246,19 @@ export class AEKFFilter {
 
 		// Sanity clamp after velocity update
 		this.sanitizeState();
+
+		// Diagnostics snapshot for velocity update (ZUPT)
+		try {
+			const Pdiag = this.P.map((row, i) => (row && row[i] !== undefined ? row[i] : 0));
+			const dbg = {
+				event: 'updateVelocity',
+				stateVel: [this.x[3], this.x[4], this.x[5]],
+				Pdiag,
+				diagTrace: this.getCovarianceTrace(),
+			};
+			console.debug('AEKF', dbg);
+			if (this.debugCallback) this.debugCallback(dbg);
+		} catch (e) {}
 	}
 
 	// Getters for reactive state
