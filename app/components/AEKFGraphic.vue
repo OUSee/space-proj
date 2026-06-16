@@ -81,8 +81,8 @@ const nisVals = computed(() => history.value.map((d: any) => d.nis).filter((v: a
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <div>
                 <div style="font-weight:600">AEKF Live Overview</div>
-                <div style="font-size:0.9rem; color:#b8d8ff">Last event: {{ diag.lastEvent || '—' }} | Predicts: {{
-                    diag.predictCount || 0 }} | Updates: {{ diag.updateCount || 0 }}</div>
+                <div style="font-size:0.9rem; color:#b8d8ff">Last event: {{ diag?.lastEvent || '—' }} | Predicts: {{
+                    diag?.predictCount || 0 }} | Updates: {{ diag?.updateCount || 0 }}</div>
             </div>
             <div style="text-align:right">
                 <div style="font-size:0.85rem; color:#9fbfdc">Trace</div>
@@ -273,17 +273,17 @@ const nisVals = computed(() => history.value.map((d: any) => d.nis).filter((v: a
             <div style="padding:10px; background:#07101a; border-radius:8px; border:1px solid #173a56;">
                 <div style="font-weight:600">System state</div>
                 <div style="font-size:0.9rem; color:#b8d8ff; margin-top:8px">pos:
-                    {{diag.statePos ?
+                    {{diag?.statePos ?
                         diag.statePos.map(n => n.toFixed(2)).join(', ')
                         : '–'}}
                 </div>
                 <div style="font-size:0.9rem; color:#b8d8ff;">vel:
-                    {{diag.stateVel ?
+                    {{diag?.stateVel ?
                         diag.stateVel.map(n => n.toFixed(3)).join(', ')
                         : '–'}}
                 </div>
                 <div style="font-size:0.9rem; color:#b8d8ff;">last nis:
-                    {{ diag.lastNis ? diag.lastNis.toFixed(2) : '–' }}
+                    {{ diag?.lastNis ? diag.lastNis.toFixed(2) : '–' }}
                 </div>
             </div>
 
