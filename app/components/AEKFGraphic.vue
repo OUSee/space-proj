@@ -86,18 +86,25 @@ const latestBias = computed(() => props.biasGyroHistory?.[props.biasGyroHistory.
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap:10px;">
             <div style="padding:10px; background:#07101a; border-radius:8px; border:1px solid #173a56;">
                 <div style="font-weight:600">System state</div>
-                <div style="font-size:0.9rem; color:#b8d8ff; margin-top:8px">pos: {{diag.statePos ? diag.statePos.map(n
-                    => n.toFixed(2)).join(', ') : '–' }}</div>
-                <div style="font-size:0.9rem; color:#b8d8ff;">vel: {{diag.stateVel ? diag.stateVel.map(n =>
-                    n.toFixed(3)).join(', ') : '–' }}</div>
-                <div style="font-size:0.9rem; color:#b8d8ff;">last nis: {{ diag.lastNis ? diag.lastNis.toFixed(2) : '–'
-                    }}</div>
+                <div style="font-size:0.9rem; color:#b8d8ff; margin-top:8px">pos:
+                    {{diag.statePos ?
+                        diag.statePos.map(n => n.toFixed(2)).join(', ')
+                        : '–'}}
+                </div>
+                <div style="font-size:0.9rem; color:#b8d8ff;">vel:
+                    {{diag.stateVel ?
+                        diag.stateVel.map(n => n.toFixed(3)).join(', ')
+                        : '–'}}
+                </div>
+                <div style="font-size:0.9rem; color:#b8d8ff;">last nis:
+                    {{ diag.lastNis ? diag.lastNis.toFixed(2) : '–' }}
+                </div>
             </div>
 
             <div style="padding:10px; background:#07101a; border-radius:8px; border:1px solid #173a56;">
                 <div style="font-weight:600">Matrices (diag)</div>
                 <div style="font-size:0.9rem; color:#b8d8ff; margin-top:8px">P diag: {{diag.Pdiag ?
-                    diag.Pdiag.slice(0, 6).map(x => x.toFixed(2)).join(', ') : '–' }}</div>
+                    diag.Pdiag.slice(0, 6).map(x => x.toFixed(2)).join(', ') : '–'}}</div>
                 <div style="font-size:0.9rem; color:#b8d8ff;">Q scale: {{ diag.procNoiseScale?.toFixed ?
                     diag.procNoiseScale.toFixed(2) : '–' }}</div>
             </div>
