@@ -32,6 +32,9 @@ function renderSparkline(values: number[], width = 360, height = 120): string {
 const latestTrace = computed(() => props.covTraceHistory?.[props.covTraceHistory.length - 1] ?? 0);
 const latestVel = computed(() => props.velMagHistory?.[props.velMagHistory.length - 1] ?? 0);
 const latestBias = computed(() => props.biasGyroHistory?.[props.biasGyroHistory.length - 1] ?? 0);
+const traceHistory = computed(() => (props.covTraceHistory || []).slice(-40));
+const velHistory = computed(() => (props.velMagHistory || []).slice(-40));
+const biasHistory = computed(() => (props.biasGyroHistory || []).slice(-40));
 
 const history = computed(() => (props.diag && props.diag.history) ? props.diag.history : []);
 const latest = computed(() => history.value.length ? history.value[history.value.length - 1] : {});
@@ -79,16 +82,34 @@ const hasHistory = computed(() => history.value.length > 0 || props.covTraceHist
 
 <template>
     <div style="display:grid; gap:12px;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
             <div>
                 <div style="font-weight:600">AEKF Live Overview</div>
                 <div style="font-size:0.9rem; color:#b8d8ff">Last event: {{ diag?.lastEvent || '—' }} | Predicts: {{
                     diag?.predictCount || 0 }} | Updates: {{ diag?.updateCount || 0 }}</div>
             </div>
-            <div style="text-align:right">
+            <div style="text-align:right; min-width:140px;">
                 <div style="font-size:0.85rem; color:#9fbfdc">Trace</div>
                 <div style="font-size:1.2rem; color:#7fffd4">{{ latestTrace.toFixed(1) }}</div>
+                <div style="font-size:0.8rem; color:#8ab6ff;">last {{ traceHistory.length }} samples</div>
             </div>
+        </div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; font-size:0.85rem; color:#b8d8ff; margin-top:8px;">
+            <div style="display:flex; align-items:center; gap:6px;"><span
+                    style="width:12px;height:12px;background:#7fffd4;border-radius:2px;"
+                ></span>Cov trace</div>
+            <div style="display:flex; align-items:center; gap:6px;"><span
+                    style="width:12px;height:12px;background:#ffb800;border-radius:2px;"
+                ></span>Velocity</div>
+            <div style="display:flex; align-items:center; gap:6px;"><span
+                    style="width:12px;height:12px;background:#ff6b6b;border-radius:2px;"
+                ></span>Gyro bias</div>
+            <div style="display:flex; align-items:center; gap:6px;"><span
+                    style="width:12px;height:12px;background:#3498db;border-radius:2px;"
+                ></span>Update event</div>
+            <div style="display:flex; align-items:center; gap:6px;"><span
+                    style="width:12px;height:12px;background:#2ecc71;border-radius:2px;"
+                ></span>Predict event</div>
         </div>
 
         <svg
@@ -114,20 +135,20 @@ const hasHistory = computed(() => history.value.length > 0 || props.covTraceHist
                 opacity="0.75"
             >Waiting for EKF data…</text>
             <path
-                :d="renderSparkline(covTraceHistory, 360, 100)"
+                :d="renderSparkline(traceHistory, 360, 100)"
                 fill="none"
                 stroke="#7fffd4"
                 stroke-width="2"
             />
             <path
-                :d="renderSparkline(velMagHistory, 360, 100)"
+                :d="renderSparkline(velHistory, 360, 100)"
                 fill="none"
                 stroke="#ffb800"
                 stroke-width="2"
                 opacity="0.9"
             />
             <path
-                :d="renderSparkline(biasGyroHistory, 360, 100)"
+                :d="renderSparkline(biasHistory, 360, 100)"
                 fill="none"
                 stroke="#ff6b6b"
                 stroke-width="2"
@@ -138,81 +159,93 @@ const hasHistory = computed(() => history.value.length > 0 || props.covTraceHist
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap:10px;">
             <div style="padding:10px; background:#07101a; border-radius:8px; border:1px solid #173a56;">
                 <div style="font-weight:600">P matrix (8x8)</div>
-                <div style="margin-top:8px;">
-                    <svg
-                        width="180"
-                        height="180"
-                        viewBox="0 0 80 80"
-                    >
-                        <rect
-                            x="0"
-                            y="0"
-                            width="80"
-                            height="80"
-                            fill="#07101a"
-                        />
-                        <g>
-                            <template
-                                v-for="(row, rIndex) in Pmatrix"
-                                :key="'prow' + rIndex"
-                            >
+                <div
+                    style="margin-top:8px; min-height:180px; display:flex; align-items:center; justify-content:center; color:#7f9cff;">
+                    <template v-if="Pmatrix.length">
+                        <svg
+                            width="180"
+                            height="180"
+                            viewBox="0 0 80 80"
+                        >
+                            <rect
+                                x="0"
+                                y="0"
+                                width="80"
+                                height="80"
+                                fill="#07101a"
+                            />
+                            <g>
                                 <template
-                                    v-for="(val, cIndex) in row"
-                                    :key="'pcell' + rIndex + '-' + cIndex"
+                                    v-for="(row, rIndex) in Pmatrix"
+                                    :key="'prow' + rIndex"
                                 >
-                                    <rect
-                                        :x="cIndex * 9"
-                                        :y="rIndex * 9"
-                                        width="9"
-                                        height="9"
-                                        :fill="(Pstats.max > Pstats.min) ? heatColor((val - Pstats.min) / (Pstats.max - Pstats.min)) : '#123'"
-                                        stroke="#0b2b3a"
-                                        stroke-width="0.3"
-                                    />
+                                    <template
+                                        v-for="(val, cIndex) in row"
+                                        :key="'pcell' + rIndex + '-' + cIndex"
+                                    >
+                                        <rect
+                                            :x="cIndex * 9"
+                                            :y="rIndex * 9"
+                                            width="9"
+                                            height="9"
+                                            :fill="(Pstats.max > Pstats.min) ? heatColor((val - Pstats.min) / (Pstats.max - Pstats.min)) : '#123'"
+                                            stroke="#0b2b3a"
+                                            stroke-width="0.3"
+                                        />
+                                    </template>
                                 </template>
-                            </template>
-                        </g>
-                    </svg>
+                            </g>
+                        </svg>
+                    </template>
+                    <template v-else>
+                        <div>No P matrix data yet</div>
+                    </template>
                 </div>
             </div>
 
             <div style="padding:10px; background:#07101a; border-radius:8px; border:1px solid #173a56;">
                 <div style="font-weight:600">Q matrix (8x8)</div>
-                <div style="margin-top:8px;">
-                    <svg
-                        width="180"
-                        height="180"
-                        viewBox="0 0 80 80"
-                    >
-                        <rect
-                            x="0"
-                            y="0"
-                            width="80"
-                            height="80"
-                            fill="#07101a"
-                        />
-                        <g>
-                            <template
-                                v-for="(row, rIndex) in Qmatrix"
-                                :key="'qrow' + rIndex"
-                            >
+                <div
+                    style="margin-top:8px; min-height:180px; display:flex; align-items:center; justify-content:center; color:#7f9cff;">
+                    <template v-if="Qmatrix.length">
+                        <svg
+                            width="180"
+                            height="180"
+                            viewBox="0 0 80 80"
+                        >
+                            <rect
+                                x="0"
+                                y="0"
+                                width="80"
+                                height="80"
+                                fill="#07101a"
+                            />
+                            <g>
                                 <template
-                                    v-for="(val, cIndex) in row"
-                                    :key="'qcell' + rIndex + '-' + cIndex"
+                                    v-for="(row, rIndex) in Qmatrix"
+                                    :key="'qrow' + rIndex"
                                 >
-                                    <rect
-                                        :x="cIndex * 9"
-                                        :y="rIndex * 9"
-                                        width="9"
-                                        height="9"
-                                        :fill="(Qstats.max > Qstats.min) ? heatColor((val - Qstats.min) / (Qstats.max - Qstats.min)) : '#123'"
-                                        stroke="#0b2b3a"
-                                        stroke-width="0.3"
-                                    />
+                                    <template
+                                        v-for="(val, cIndex) in row"
+                                        :key="'qcell' + rIndex + '-' + cIndex"
+                                    >
+                                        <rect
+                                            :x="cIndex * 9"
+                                            :y="rIndex * 9"
+                                            width="9"
+                                            height="9"
+                                            :fill="(Qstats.max > Qstats.min) ? heatColor((val - Qstats.min) / (Qstats.max - Qstats.min)) : '#123'"
+                                            stroke="#0b2b3a"
+                                            stroke-width="0.3"
+                                        />
+                                    </template>
                                 </template>
-                            </template>
-                        </g>
-                    </svg>
+                            </g>
+                        </svg>
+                    </template>
+                    <template v-else>
+                        <div>No Q matrix data yet</div>
+                    </template>
                 </div>
             </div>
 

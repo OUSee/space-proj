@@ -140,15 +140,20 @@ export class AEKFFilter {
 			const diagTrace = this.getCovarianceTrace();
 			const dbg = {
 				event: 'predict',
-				dt,
+				t: performance.now(),
 				rawAccel: accel,
 				accelBias: [bax, bay, baz],
 				bodyAccelNoBias: [ax, ay, az],
 				worldAccel: [aw_x, aw_y, aw_z],
 				beforeVel,
 				afterVel,
+				statePos: [px!, py!, pz!],
+				stateVel: [vx!, vy!, vz!],
+				stateQuat: [quat.w, quat.x, quat.y, quat.z],
 				Pdiag,
 				diagTrace,
+				P: MatrixUtils.copy(this.P),
+				Q: MatrixUtils.copy(this.Q),
 			};
 			console.debug('AEKF', dbg);
 			if (this.debugCallback) this.debugCallback(dbg);
@@ -315,13 +320,15 @@ export class AEKFFilter {
 			);
 			const dbg: any = {
 				event: 'updatePosition',
+				t: performance.now(),
 				posMeasured: pos,
 				statePos: [this.x[0], this.x[1], this.x[2]],
+				stateVel: [this.x[3], this.x[4], this.x[5]],
 				Pdiag,
 				nis,
 				diagTrace: this.getCovarianceTrace(),
-				P: this.P,
-				Q: this.Q,
+				P: MatrixUtils.copy(this.P),
+				Q: MatrixUtils.copy(this.Q),
 			};
 			console.debug('AEKF', dbg);
 			if (this.debugCallback) this.debugCallback(dbg);
@@ -382,9 +389,12 @@ export class AEKFFilter {
 			);
 			const dbg = {
 				event: 'updateVelocity',
+				t: performance.now(),
 				stateVel: [this.x[3], this.x[4], this.x[5]],
 				Pdiag,
 				diagTrace: this.getCovarianceTrace(),
+				P: MatrixUtils.copy(this.P),
+				Q: MatrixUtils.copy(this.Q),
 			};
 			console.debug('AEKF', dbg);
 			if (this.debugCallback) this.debugCallback(dbg);
