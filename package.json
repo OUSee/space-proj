@@ -14,6 +14,7 @@
 		"@pinia/nuxt": "^0.11.3",
 		"@types/three": "^0.183.1",
 		"@vueuse/core": "^14.2.1",
+		"leaflet": "^1.9.4",
 		"nuxt": "^4.4.2",
 		"peerjs": "^1.5.5",
 		"pinia": "^3.0.4",
@@ -29,6 +30,7 @@
 		"@oxc-minify/binding-win32-x64-msvc": "^0.125.0",
 		"@oxc-parser/binding-win32-x64-msvc": "^0.125.0",
 		"@oxc-transform/binding-win32-x64-msvc": "^0.125.0",
+		"@types/leaflet": "^1.9.4",
 		"@vite-pwa/nuxt": "^1.1.1",
 		"http-server": "^14.1.1"
 	}
