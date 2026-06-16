@@ -42,6 +42,13 @@ const xest = ref<StateVector>({
     biasAcc: [0, 0, 0],
     biasGyro: [0, 0, 0],
 });
+const diagnostics = ref<{
+    covTrace: number | null;
+    velMag: number;
+    isStationary: boolean;
+    biasAccMag: number;
+    biasGyroMag: number;
+} | null>(null);
 const trajectory = ref<number[][]>([]);
 const frameCount = ref(0);
 const lastFrameTime = ref(performance.now());
@@ -170,7 +177,7 @@ async function initMap() {
             if (latestGPS.value) {
                 map.setView([latestGPS.value.lat, latestGPS.value.lon], 16);
             } else {
-                map.setView([59.93, 30.3], 12); // fallback (e.g. your city)
+                map.setView([51.65172, 39.17852], 12); // fallback (e.g. your city)
             }
         }
     }, 120);
@@ -398,9 +405,17 @@ function initFilter() {
         initialX[12] = calibrationData.value.gyroMean[0]!;
         initialX[13] = calibrationData.value.gyroMean[1]!;
         initialX[14] = calibrationData.value.gyroMean[2]!;
+        console.log('Calibration data:', {
+            accelMean: calibrationData.value.accelMean,
+            gyroMean: calibrationData.value.gyroMean,
+            initialBiasAcc: [initialX[9], initialX[10], initialX[11]],
+            initialBiasGyro: [initialX[12], initialX[13], initialX[14]],
+        });
     }
     const initialP = MatrixUtils.eye(15).map((row) => row.map(() => 1.0));
-    const Q = MatrixUtils.eye(15).map((row) => row.map(() => 0.01));
+    // Increased Q to reduce trust in IMU integration (prevent bias blowup)
+    // Q ~ 0.5 means we expect significant process noise in position/velocity/attitude
+    const Q = MatrixUtils.eye(15).map((row) => row.map(() => 0.5));
     const R = MatrixUtils.eye(3).map((row) => row.map(() => 5.0));
     filterInstance = new AEKFFilter(initialX, initialP, Q, R);
     status.value = 'Filter ready – listening to IMU';
@@ -459,11 +474,23 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
     // treat accel as gravity-only to avoid integrating noise into velocity.
     const gyroMag = Math.sqrt(gyro[0] * gyro[0] + gyro[1] * gyro[1] + gyro[2] * gyro[2]);
     const accelMag = Math.sqrt(accel[0] * accel[0] + accel[1] * accel[1] + accel[2] * accel[2]);
-    if (Math.abs(accelMag - 9.81) < 0.35 && gyroMag < 0.02) {
+    const isStationary = Math.abs(accelMag - 9.81) < 0.35 && gyroMag < 0.02;
+
+    if (isStationary) {
         accel = [0, 0, 9.81];
     }
 
     filterInstance.predict(accel, gyro, dt);
+
+    // Zero-velocity update: when stationary, strongly constrain velocity to zero
+    if (isStationary) {
+        const R_vel = [
+            [0.01, 0, 0],
+            [0, 0.01, 0],
+            [0, 0, 0.01],
+        ];
+        filterInstance.updateVelocity(R_vel);
+    }
 
     xest.value = {
         pos: filterInstance.getPosition(),
@@ -490,16 +517,26 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
         if (recording.value) appendTrackPoint(filteredGeo);
     }
 
-    // Diagnostics: periodic logging of EKF state to help track drift
+    // Diagnostics: update UI panel every 10 frames
     const vel = xest.value.vel;
     const pos = xest.value.pos;
     const velMag = Math.sqrt(vel[0] * vel[0] + vel[1] * vel[1] + vel[2] * vel[2]);
-    if (frameCount.value % 100 === 0) {
+    const biasAccMag = Math.sqrt(
+        xest.value.biasAcc[0] ** 2 + xest.value.biasAcc[1] ** 2 + xest.value.biasAcc[2] ** 2
+    );
+    const biasGyroMag = Math.sqrt(
+        xest.value.biasGyro[0] ** 2 + xest.value.biasGyro[1] ** 2 + xest.value.biasGyro[2] ** 2
+    );
+
+    if (frameCount.value % 10 === 0) {
         const trace = filterInstance ? filterInstance.getCovarianceTrace() : null;
-        console.log('EKF tick', { dt, pos, vel, velMag, covTrace: trace, gps: latestGPS.value });
-    }
-    if (velMag > 0.5) {
-        console.warn('High velocity detected', { velMag, pos, vel });
+        diagnostics.value = {
+            covTrace: trace,
+            velMag,
+            isStationary,
+            biasAccMag,
+            biasGyroMag,
+        };
     }
 
     frameCount.value++;
@@ -739,11 +776,12 @@ onMounted(async () => {
                             style="width: 100%; height: 420px;"
                         ></div>
                     </div>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap; color: #b8d8ff; font-size: 0.95rem;">
+                    <div
+                        style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: #b8d8ff; font-size: 0.95rem;">
                         <span>Filtered route is <strong>{{ showFiltered ? 'visible' : 'hidden' }}</strong>.</span>
                         <span>Raw track remains visible in blue.</span>
                         <span style="display:flex; align-items:center; gap:8px;">
-                            <label style="font-size:0.9rem;">Map follow:</label>
+                            <label style="font-size:0.95rem;">Map follow:</label>
                             <select
                                 v-model="mapFollowMode"
                                 style="background:#0c1118; color:#b8d8ff; border:1px solid #2f9fdf; border-radius:6px; padding:6px;"
@@ -788,6 +826,24 @@ onMounted(async () => {
                             DVOData?.gamma?.toFixed(1) || '–' }}</div>
                         <div>Last IMU ts: {{ debugData?.timestamp ? new Date(debugData.timestamp).toLocaleTimeString() :
                             'none' }}</div>
+                    </div>
+                </div>
+                <div style="padding: 16px; background: #11181f; border: 1px solid #2f9fdf; border-radius: 10px;">
+                    <strong>Filter Diagnostics</strong>
+                    <div style="margin-top: 12px; font-size: 0.95rem; line-height: 1.7;">
+                        <div><strong>Calibration Accel:</strong> {{calibrationData?.accelMean ?
+                            calibrationData.accelMean.map(x => x.toFixed(2)).join(', ') : 'pending'}}</div>
+                        <div><strong>Calibration Gyro:</strong> {{calibrationData?.gyroMean ?
+                            calibrationData.gyroMean.map(x => (x * 180 / Math.PI).toFixed(2)).join(', ') : 'pending'}}
+                            deg/s</div>
+                        <hr style="border: none; border-top: 1px solid #2f9fdf; margin: 8px 0;" />
+                        <div><strong>Velocity Mag:</strong> {{ diagnostics?.velMag?.toFixed(3) || '–' }} m/s</div>
+                        <div><strong>Bias Accel Mag:</strong> {{ diagnostics?.biasAccMag?.toFixed(4) || '–' }}</div>
+                        <div><strong>Bias Gyro Mag:</strong> {{ diagnostics?.biasGyroMag?.toFixed(6) || '–' }}</div>
+                        <div><strong>Cov Trace:</strong> {{ diagnostics?.covTrace?.toFixed(1) || '–' }}</div>
+                        <div><strong>Stationary:</strong> <span
+                                :style="{ color: diagnostics?.isStationary ? '#7fffd4' : '#ff6b6b' }"
+                            >{{ diagnostics?.isStationary ? 'YES' : 'NO' }}</span></div>
                     </div>
                 </div>
             </div>

@@ -149,6 +149,49 @@ export class AEKFFilter {
 		this.P = MatrixUtils.add(P1, KRKt);
 	}
 
+	/**
+	 * Zero-velocity update: when device is stationary, constrain velocity to [0,0,0].
+	 * This prevents velocity drift during rest periods.
+	 * @param R_vel Measurement noise for velocity (3x3), typically small e.g. 0.01
+	 */
+	updateVelocity(R_vel: number[][]): void {
+		// H extracts velocity [3,4,5] from state
+		const H = [
+			[0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+			[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+			[0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+		];
+
+		// Measurement: velocity should be zero
+		const z = [0, 0, 0];
+		const y = [z[0] - this.x[3]!, z[1] - this.x[4]!, z[2] - this.x[5]!];
+
+		const Ht = MatrixUtils.transpose(H);
+		const HP = MatrixUtils.multiply(H, this.P);
+		const HPHt = MatrixUtils.multiply(HP, Ht);
+		const S = MatrixUtils.add(HPHt, R_vel);
+		const invS = MatrixUtils.inverse(S);
+		const K = MatrixUtils.multiply(MatrixUtils.multiply(this.P, Ht), invS);
+
+		// Update state
+		const Ky = MatrixUtils.matrixVectorMultiply(K, y);
+		for (let i = 0; i < 15; i++) this.x[i]! += Ky[i]!;
+
+		// Joseph form covariance update
+		const I = MatrixUtils.eye(15);
+		const KH = MatrixUtils.multiply(K, H);
+		const I_KH = MatrixUtils.subtract(I, KH);
+		const P1 = MatrixUtils.multiply(
+			MatrixUtils.multiply(I_KH, this.P),
+			MatrixUtils.transpose(I_KH),
+		);
+		const KRKt = MatrixUtils.multiply(
+			MatrixUtils.multiply(K, R_vel),
+			MatrixUtils.transpose(K),
+		);
+		this.P = MatrixUtils.add(P1, KRKt);
+	}
+
 	// Getters for reactive state
 	getPosition(): [number, number, number] {
 		return [this.x[0]!, this.x[1]!, this.x[2]!];
