@@ -32,7 +32,7 @@ const latestGPS = ref<{ lat: number; lon: number; alt: number; accuracy: number;
 const currentRawEnu = ref<[number, number, number] | null>(null);
 const currentFilteredLatLng = ref<{ lat: number; lon: number; alt: number } | null>(null);
 const showFiltered = ref(true);
-const mapFollowMode = ref<'filtered' | 'raw' | 'both'>('filtered');
+const mapFollowMode = ref<'filtered' | 'raw' | 'both'>('both');
 const recording = ref(false);
 const trackPoints = ref<Array<{ lat: number; lon: number; ts: number }>>([]);
 const rawTrackPoints = ref<Array<{ lat: number; lon: number; ts: number }>>([]);
@@ -367,7 +367,9 @@ async function calibrateSensors(): Promise<void> {
                         .map((v) => v / gyroSamples.length)
                     : [0, 0, 0];
                 calibrationData.value = { accelMean, gyroMean };
+                // mark calibration finished and clear the calibrating flag so IMU processing resumes
                 calibrationCompleted.value = true;
+                isCalibrating.value = false;
                 status.value = '✅ Calibration done. Starting filter...';
                 initFilter();
                 resolve();
@@ -802,6 +804,29 @@ onMounted(async () => {
                             id="map"
                             style="width: 100%; height: 420px;"
                         ></div>
+                        <!-- Map legend -->
+                        <div
+                            style="position: absolute; top: 12px; right: 12px; z-index: 1100; background: rgba(12,17,24,0.95); border: 1px solid #2f9fdf; padding: 8px 10px; border-radius: 8px; color: #b8d8ff; font-size: 0.9rem;">
+                            <div style="font-weight:600; margin-bottom:6px;">Legend</div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <span
+                                    style="width:12px; height:12px; background: #33d9ff; display:inline-block; border-radius:3px; border: 1px solid rgba(0,0,0,0.2);"
+                                ></span>
+                                <span>Raw GPS fix</span>
+                            </div>
+                            <div style="display:flex; gap:8px; align-items:center; margin-top:6px;">
+                                <span
+                                    style="width:12px; height:12px; background: #a0ff4d; display:inline-block; border-radius:3px; border: 1px solid rgba(0,0,0,0.2);"
+                                ></span>
+                                <span>Filtered (EKF)</span>
+                            </div>
+                            <div style="display:flex; gap:8px; align-items:center; margin-top:6px;">
+                                <span
+                                    style="width:12px; height:12px; background: #ffb800; display:inline-block; border-radius:3px; border: 1px solid rgba(0,0,0,0.2);"
+                                ></span>
+                                <span>Recording control</span>
+                            </div>
+                        </div>
                     </div>
                     <div
                         style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: #b8d8ff; font-size: 0.95rem;">
