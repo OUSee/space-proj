@@ -10,6 +10,7 @@ import { enuToGeodetic, geodeticToEnu, haversineDistance } from '~/core/geo';
 import type { IMUData, StateVector } from '~/types';
 import type { LatLngExpression, Map as LeafletMap, Marker, Polyline } from 'leaflet';
 
+
 // ----------------------------- Reactive state -----------------------------
 const status = ref('Initializing...');
 const orientationGranted = ref(false);
@@ -78,7 +79,7 @@ const fps = computed(() => {
     return delta > 0 ? (1000 / delta).toFixed(1) : '0';
 });
 
-const rmse = computed(() => {
+const trajectoryRms = computed(() => {
     if (trajectory.value.length < 2) return 0;
     let sum = 0;
     for (const pos of trajectory.value) {
@@ -319,7 +320,7 @@ watch(
 
         appendRawPoint(c.latitude, c.longitude);
 
-        const accHor = Math.max(c.accuracy ?? 5.0, 5.0);
+        const accHor = Math.max(c.accuracy ?? 20.0, 1.0);
         const R_pos = [
             [accHor ** 2, 0, 0],
             [0, accHor ** 2, 0],
@@ -468,10 +469,35 @@ function initFilter() {
         filterHasGpsFix.value = true;
         console.log('Initial filter position set from GPS:', initialPos, latestGPS.value);
     }
-    const initialP = MatrixUtils.eye(16).map((row) => row.map(() => 1.0));
+    const initialP = MatrixUtils.eye(16);
+
+    initialP[0][0] = initialP[1][1] = 1.0; // position ~1 m²
+    initialP[2][2] = 4.0;                  // altitude worse
+    initialP[3][3] = initialP[4][4] = initialP[5][5] = 0.25; // velocity
+    initialP[6][6] = initialP[7][7] = initialP[8][8] = initialP[9][9] = 0.1; // quaternion
+    initialP[10][10] = initialP[11][11] = initialP[12][12] = 0.1; // accel bias
+    initialP[13][13] = initialP[14][14] = initialP[15][15] = 0.01; // gyro bias
     // Increased Q to reduce trust in IMU integration (prevent bias blowup)
     // Q ~ 0.5 means we expect significant process noise in position/velocity/attitude
-    const Q = MatrixUtils.eye(16).map((row) => row.map(() => 0.5));
+    const Q = MatrixUtils.eye(16);
+
+    // Position random walk (small)
+    Q[0][0] = Q[1][1] = 0.01;
+    Q[2][2] = 0.04; // altitude slightly worse
+
+    // Velocity random walk
+    Q[3][3] = Q[4][4] = Q[5][5] = 0.25;
+
+    // Quaternion / attitude random walk
+    Q[6][6] = Q[7][7] = Q[8][8] = Q[9][9] = 0.05;
+
+    // Accel bias random walk (very small)
+    Q[10][10] = Q[11][11] = Q[12][12] = 0.0001;
+
+    // Gyro bias random walk (very small)
+    Q[13][13] = Q[14][14] = Q[15][15] = 0.0001;
+
+
     const R = MatrixUtils.eye(3).map((row) => row.map(() => 5.0));
     filterInstance = new AEKFFilter(initialX, initialP, Q, R);
     // Wire debugCallback so UI receives real-time snapshots from the filter
@@ -568,8 +594,26 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
     const accelMag = Math.sqrt(accel[0] * accel[0] + accel[1] * accel[1] + accel[2] * accel[2]);
     const isStationary = Math.abs(accelMag - 9.81) < 0.35 && gyroMag < 0.02;
 
+    const isStationary = Math.abs(accelMag - 9.81) < 0.35 && gyroMag < 0.02;
+
+    filterInstance.predict(accel, gyro, dt);
+
     if (isStationary) {
-        accel = [0, 0, 9.81];
+        // Stop velocity drift
+        const R_vel = [
+            [0.01, 0, 0],
+            [0, 0.01, 0],
+            [0, 0, 0.01],
+        ];
+        filterInstance.updateVelocity(R_vel);
+
+        // Correct roll/pitch from gravity
+        const R_tilt = [
+            [0.05, 0, 0],
+            [0, 0.05, 0],
+            [0, 0, 0.2],
+        ];
+        filterInstance.updateTilt(accel, R_tilt);
     }
 
     filterInstance.predict(accel, gyro, dt);
@@ -1059,7 +1103,7 @@ onMounted(async () => {
                     style="display: grid; gap: 16px;"
                 >
                     <AEKFGraphic
-                        :diag="ekfDiag.value"
+                        :diag="ekfDiag"
                         :covTraceHistory="covTraceHistory"
                         :velMagHistory="velMagHistory"
                         :biasGyroHistory="biasGyroHistory"

@@ -2,12 +2,13 @@
     setup
     lang="ts"
 >
-import { computed, toRefs } from 'vue';
+import { computed } from 'vue';
+
 const props = defineProps<{
-    diag: any;
-    covTraceHistory: number[];
-    velMagHistory: number[];
-    biasGyroHistory: number[];
+    diag?: any;
+    covTraceHistory?: number[];
+    velMagHistory?: number[];
+    biasGyroHistory?: number[];
 }>();
 
 function renderSparkline(values: number[], width = 360, height = 120): string {
@@ -36,8 +37,24 @@ const traceHistory = computed(() => (props.covTraceHistory || []).slice(-40));
 const velHistory = computed(() => (props.velMagHistory || []).slice(-40));
 const biasHistory = computed(() => (props.biasGyroHistory || []).slice(-40));
 
-const history = computed(() => (props.diag && props.diag.history) ? props.diag.history : []);
-const latest = computed(() => history.value.length ? history.value[history.value.length - 1] : {});
+// diag may be a single snapshot or { history: [...], predictCount, updateCount, ... }
+const history = computed(() => {
+    if (!props.diag) return [];
+    if (Array.isArray(props.diag)) return props.diag;
+    if (Array.isArray(props.diag.history)) return props.diag.history;
+    return [];
+});
+
+const latest = computed(() => {
+    if (props.diag && !Array.isArray(props.diag) && !props.diag.history) {
+        return props.diag;
+    }
+    return history.value.length ? history.value[history.value.length - 1] : {};
+});
+
+const predictCount = computed(() => props.diag?.predictCount ?? 0);
+const updateCount = computed(() => props.diag?.updateCount ?? 0);
+const lastEvent = computed(() => latest.value?.event || '—');
 
 function sliceMatrix(mat: number[][], maxN = 8) {
     if (!mat || !mat.length) return [];
@@ -57,27 +74,42 @@ function matrixStats(mat: number[][]) {
 }
 
 function heatColor(norm: number) {
-    // norm in [0..1] -> blue->green->red
     const r = Math.round(Math.min(255, Math.max(0, 255 * norm)));
     const g = Math.round(Math.min(200, Math.max(0, 200 * (1 - Math.abs(norm - 0.5) * 2))));
     const b = Math.round(Math.min(200, Math.max(0, 200 * (1 - norm))));
     return `rgb(${r},${g},${b})`;
 }
 
-const Pmatrix = computed(() => sliceMatrix(latest.value.P || [], 8));
-const Qmatrix = computed(() => sliceMatrix(latest.value.Q || [], 8));
+const Pmatrix = computed(() => sliceMatrix(latest.value?.P || [], 8));
+const Qmatrix = computed(() => sliceMatrix(latest.value?.Q || [], 8));
 
 const Pstats = computed(() => matrixStats(Pmatrix.value));
 const Qstats = computed(() => matrixStats(Qmatrix.value));
 
-const timeline = computed(() => {
-    const recent = history.value.slice(-120);
-    return recent.map((d: any) => ({ event: d.event || 'tick', t: d.t || 0 }));
-});
-const tl = computed(() => timeline.value.slice(-120));
+const tl = computed(() => history.value.slice(-120));
 
 const nisVals = computed(() => history.value.map((d: any) => d.nis).filter((v: any) => typeof v === 'number'));
-const hasHistory = computed(() => history.value.length > 0 || props.covTraceHistory?.length > 0 || props.velMagHistory?.length > 0 || props.biasGyroHistory?.length > 0);
+
+const hasHistory = computed(() =>
+    history.value.length > 0 ||
+    props.covTraceHistory?.length > 0 ||
+    props.velMagHistory?.length > 0 ||
+    props.biasGyroHistory?.length > 0
+);
+
+function eventColor(event: string) {
+    if (event === 'predict') return '#2ecc71';
+    if (event === 'updatePosition') return '#3498db';
+    if (event === 'updateVelocity') return '#f39c12';
+    if (event === 'updateTilt') return '#9b59b6';
+    if (event === 'updateHeading') return '#e74c3c';
+    return '#555';
+}
+
+function fmtVec(v: number[] | undefined, digits = 2): string {
+    if (!v || !Array.isArray(v)) return '—';
+    return v.map((n: number) => (typeof n === 'number' ? n.toFixed(digits) : '—')).join(', ');
+}
 </script>
 
 <template>
@@ -85,8 +117,9 @@ const hasHistory = computed(() => history.value.length > 0 || props.covTraceHist
         <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
             <div>
                 <div style="font-weight:600">AEKF Live Overview</div>
-                <div style="font-size:0.9rem; color:#b8d8ff">Last event: {{ diag?.lastEvent || '—' }} | Predicts: {{
-                    diag?.predictCount || 0 }} | Updates: {{ diag?.updateCount || 0 }}</div>
+                <div style="font-size:0.9rem; color:#b8d8ff">
+                    Last event: {{ lastEvent }} | Predicts: {{ predictCount }} | Updates: {{ updateCount }}
+                </div>
             </div>
             <div style="text-align:right; min-width:140px;">
                 <div style="font-size:0.85rem; color:#9fbfdc">Trace</div>
@@ -94,22 +127,23 @@ const hasHistory = computed(() => history.value.length > 0 || props.covTraceHist
                 <div style="font-size:0.8rem; color:#8ab6ff;">last {{ traceHistory.length }} samples</div>
             </div>
         </div>
+
         <div style="display:flex; gap:12px; flex-wrap:wrap; font-size:0.85rem; color:#b8d8ff; margin-top:8px;">
-            <div style="display:flex; align-items:center; gap:6px;"><span
-                    style="width:12px;height:12px;background:#7fffd4;border-radius:2px;"
-                ></span>Cov trace</div>
-            <div style="display:flex; align-items:center; gap:6px;"><span
-                    style="width:12px;height:12px;background:#ffb800;border-radius:2px;"
-                ></span>Velocity</div>
-            <div style="display:flex; align-items:center; gap:6px;"><span
-                    style="width:12px;height:12px;background:#ff6b6b;border-radius:2px;"
-                ></span>Gyro bias</div>
-            <div style="display:flex; align-items:center; gap:6px;"><span
-                    style="width:12px;height:12px;background:#3498db;border-radius:2px;"
-                ></span>Update event</div>
-            <div style="display:flex; align-items:center; gap:6px;"><span
-                    style="width:12px;height:12px;background:#2ecc71;border-radius:2px;"
-                ></span>Predict event</div>
+            <div style="display:flex; align-items:center; gap:6px;">
+                <span style="width:12px;height:12px;background:#7fffd4;border-radius:2px;"></span>Cov trace
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+                <span style="width:12px;height:12px;background:#ffb800;border-radius:2px;"></span>Velocity
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+                <span style="width:12px;height:12px;background:#ff6b6b;border-radius:2px;"></span>Gyro bias
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+                <span style="width:12px;height:12px;background:#3498db;border-radius:2px;"></span>Update event
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+                <span style="width:12px;height:12px;background:#2ecc71;border-radius:2px;"></span>Predict event
+            </div>
         </div>
 
         <svg
@@ -270,11 +304,11 @@ const hasHistory = computed(() => history.value.length > 0 || props.covTraceHist
                                 :key="'tl' + idx"
                             >
                                 <rect
-                                    :x="(idx * (360 / Math.max(1, tl.length)))"
+                                    :x="idx * (360 / Math.max(1, tl.length))"
                                     y="0"
                                     :width="Math.max(1, 360 / Math.max(1, tl.length))"
                                     height="28"
-                                    :fill="t.event === 'predict' ? '#2ecc71' : (t.event === 'updatePosition' ? '#3498db' : (t.event === 'updateVelocity' ? '#f39c12' : '#555'))"
+                                    :fill="eventColor(t.event)"
                                     opacity="0.9"
                                 />
                             </template>
@@ -315,27 +349,26 @@ const hasHistory = computed(() => history.value.length > 0 || props.covTraceHist
 
             <div style="padding:10px; background:#07101a; border-radius:8px; border:1px solid #173a56;">
                 <div style="font-weight:600">System state</div>
-                <div style="font-size:0.9rem; color:#b8d8ff; margin-top:8px">pos:
-                    {{diag?.statePos ?
-                        diag.statePos.map(n => n.toFixed(2)).join(', ')
-                        : '–'}}
+                <div style="font-size:0.9rem; color:#b8d8ff; margin-top:8px">
+                    pos: {{ fmtVec(latest?.statePos, 2) }}
                 </div>
-                <div style="font-size:0.9rem; color:#b8d8ff;">vel:
-                    {{diag?.stateVel ?
-                        diag.stateVel.map(n => n.toFixed(3)).join(', ')
-                        : '–'}}
+                <div style="font-size:0.9rem; color:#b8d8ff;">
+                    vel: {{ fmtVec(latest?.stateVel, 3) }}
                 </div>
-                <div style="font-size:0.9rem; color:#b8d8ff;">last nis:
-                    {{ diag?.lastNis ? diag.lastNis.toFixed(2) : '–' }}
+                <div style="font-size:0.9rem; color:#b8d8ff;">
+                    last nis: {{ typeof latest?.nis === 'number' ? latest.nis.toFixed(2) : '—' }}
                 </div>
             </div>
 
             <div style="padding:10px; background:#07101a; border-radius:8px; border:1px solid #173a56;">
                 <div style="font-weight:600">Matrices (diag)</div>
-                <div style="font-size:0.9rem; color:#b8d8ff; margin-top:8px">P diag: {{diag?.Pdiag ?
-                    diag.Pdiag.slice(0, 6).map(x => x.toFixed(2)).join(', ') : '–'}}</div>
-                <div style="font-size:0.9rem; color:#b8d8ff;">Q scale: {{ diag?.procNoiseScale?.toFixed ?
-                    diag.procNoiseScale.toFixed(2) : '–' }}</div>
+                <div style="font-size:0.9rem; color:#b8d8ff; margin-top:8px">
+                    P diag: {{latest?.Pdiag ? latest.Pdiag.slice(0, 6).map((x: number) => x.toFixed(2)).join(', ') :
+                    '—' }}
+                </div>
+                <div style="font-size:0.9rem; color:#b8d8ff;">
+                    Q scale: {{ typeof latest?.procNoiseScale === 'number' ? latest.procNoiseScale.toFixed(2) : '—' }}
+                </div>
             </div>
         </div>
     </div>
@@ -343,6 +376,6 @@ const hasHistory = computed(() => history.value.length > 0 || props.covTraceHist
 
 <style scoped>
 div {
-    color: #dff3ff
+    color: #dff3ff;
 }
 </style>
