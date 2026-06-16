@@ -166,6 +166,17 @@ export class AEKFFilter {
 		return [this.x[12]!, this.x[13]!, this.x[14]!];
 	}
 
+	/**
+	 * Return covariance trace (sum of diagonal) for quick diagnostics.
+	 */
+	getCovarianceTrace(): number {
+		let tr = 0;
+		for (let i = 0; i < this.P.length; i++) {
+			tr += (this.P[i] && this.P[i][i]) || 0;
+		}
+		return tr;
+	}
+
 	setState(x: number[]) {
 		this.x = [...x];
 	}

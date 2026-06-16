@@ -99,7 +99,6 @@ const positionLabel = computed(() => {
 });
 
 const recordingLabel = computed(() => (recording.value ? 'Stop Recording' : 'Start Recording'));
-const displayMode = computed(() => (showFiltered.value ? 'Filtered' : 'Raw'));
 
 // ----------------------------- GPS (VueUse) -----------------------------
 const { coords, error } = useGeolocation({
@@ -275,10 +274,6 @@ function clearTrack() {
 function toggleRecording() {
     if (recording.value) stopRecording();
     else startRecording();
-}
-
-function toggleShowFiltered() {
-    showFiltered.value = !showFiltered.value;
 }
 
 watch(
@@ -500,7 +495,8 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
     const pos = xest.value.pos;
     const velMag = Math.sqrt(vel[0] * vel[0] + vel[1] * vel[1] + vel[2] * vel[2]);
     if (frameCount.value % 100 === 0) {
-        console.log('EKF tick', { dt, pos, vel, velMag, gps: latestGPS.value });
+        const trace = filterInstance ? filterInstance.getCovarianceTrace() : null;
+        console.log('EKF tick', { dt, pos, vel, velMag, covTrace: trace, gps: latestGPS.value });
     }
     if (velMag > 0.5) {
         console.warn('High velocity detected', { velMag, pos, vel });
@@ -710,10 +706,7 @@ onMounted(async () => {
                             @click="clearTrack"
                             style="padding: 10px; background: #ff4b4b; color: #000; border: none; border-radius: 8px; cursor: pointer;"
                         >Clear Track</button>
-                        <button
-                            @click="toggleShowFiltered"
-                            style="padding: 10px; background: #7dd3fc; color: #000; border: none; border-radius: 8px; cursor: pointer;"
-                        >Display {{ displayMode }}</button>
+
                     </div>
                 </div>
 
@@ -772,9 +765,9 @@ onMounted(async () => {
                         <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
                             {{ xest.pos[2].toFixed(3) }}</div>
                         <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
-                        }}, {{ xest.vel[2].toFixed(3) }}</div>
+                            }}, {{ xest.vel[2].toFixed(3) }}</div>
                         <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
-                        }}, {{ xest.att[2].toFixed(3) }}</div>
+                            }}, {{ xest.att[2].toFixed(3) }}</div>
                         <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
                             xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
                         <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{
