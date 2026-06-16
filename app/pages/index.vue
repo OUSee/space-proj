@@ -333,6 +333,34 @@ watch(
 
         if (filterInstance) {
             filterInstance.updatePosition(enu, R_pos);
+
+            if (filterInstance && c.speed && c.speed > 0.5 && c.heading !== null) {
+                const headingRad = c.heading * Math.PI / 180;
+
+                // ENU velocity from speed/heading
+                const v_enu = [
+                    c.speed * Math.sin(headingRad), // east
+                    c.speed * Math.cos(headingRad), // north
+                    0,
+                ];
+
+                const speedVar = (c.speedAccuracy ?? 0.5) ** 2;
+                const headingVar = (5 * Math.PI / 180) ** 2; // ~5 deg heading uncertainty
+
+                // Simplified ENU velocity covariance
+                const R_vel = [
+                    [speedVar + headingVar * c.speed ** 2, 0, 0],
+                    [0, speedVar + headingVar * c.speed ** 2, 0],
+                    [0, 0, 1.0],
+                ];
+
+                filterInstance.updateVelocityMeasurement(v_enu, R_vel);
+
+                // Yaw correction from GPS course
+                const yaw = (90 - c.heading) * Math.PI / 180;
+                filterInstance.updateHeading(yaw, [[0.5]]);
+            }
+
             filterHasGpsFix.value = true;
             if (refSet) {
                 const filteredGeo = enuToGeodetic(
@@ -578,9 +606,9 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
         (event.accelerationIncludingGravity?.z ?? event.acceleration?.z ?? 0),
     ];
     let gyro: [number, number, number] = [
-        (event.rotationRate?.alpha ?? 0) * Math.PI / 180,
-        (event.rotationRate?.beta ?? 0) * Math.PI / 180,
-        (event.rotationRate?.gamma ?? 0) * Math.PI / 180,
+        (event.rotationRate?.beta ?? 0) * Math.PI / 180,   // x-axis roll rate
+        (event.rotationRate?.gamma ?? 0) * Math.PI / 180,  // y-axis pitch rate
+        -(event.rotationRate?.alpha ?? 0) * Math.PI / 180, // z-axis yaw rate (sign may need flipping)
     ];
 
     // Note: do NOT subtract calibration means here. The filter's bias state
@@ -593,7 +621,7 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
     const gyroMag = Math.sqrt(gyro[0] * gyro[0] + gyro[1] * gyro[1] + gyro[2] * gyro[2]);
     const accelMag = Math.sqrt(accel[0] * accel[0] + accel[1] * accel[1] + accel[2] * accel[2]);
     const isStationary = Math.abs(accelMag - 9.81) < 0.35 && gyroMag < 0.02;
-
+    const isCoasting = Math.abs(accelMag - 9.81) < 0.8 && gyroMag < 0.1;
 
     filterInstance.predict(accel, gyro, dt);
 
@@ -613,6 +641,13 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
             [0, 0, 0.2],
         ];
         filterInstance.updateTilt(accel, R_tilt);
+    } else if (isCoasting) {
+        // Soft tilt correction during gentle motion
+        filterInstance.updateTilt(accel, [
+            [0.5, 0, 0],
+            [0, 0.5, 0],
+            [0, 0, 1.0],
+        ]);
     }
 
     filterInstance.predict(accel, gyro, dt);
@@ -1118,9 +1153,9 @@ onMounted(async () => {
                         <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
                             {{ xest.pos[2].toFixed(3) }}</div>
                         <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
-                        }}, {{ xest.vel[2].toFixed(3) }}</div>
+                            }}, {{ xest.vel[2].toFixed(3) }}</div>
                         <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
-                        }}, {{ xest.att[2].toFixed(3) }}</div>
+                            }}, {{ xest.att[2].toFixed(3) }}</div>
                         <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
                             xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
                         <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{

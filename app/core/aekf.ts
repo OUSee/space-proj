@@ -436,25 +436,35 @@ export class AEKFFilter {
 	}
 
 	/**
-	 * Zero-velocity update: when device is stationary, constrain velocity to [0,0,0].
-	 * This prevents velocity drift during rest periods.
-	 * @param R_vel Measurement noise for velocity (3x3), typically small e.g. 0.01
+	 * Update step using a velocity measurement (e.g. from GPS speed + heading).
+	 * @param vel Measured velocity [east, north, up] in m/s
+	 * @param R_vel Measurement noise covariance (3x3)
 	 */
-	updateVelocity(R_vel: number[][]): void {
-		// H extracts velocity [3,4,5] from state
+	updateVelocityMeasurement(
+		vel: [number, number, number],
+		R_vel: number[][],
+	): void {
 		const H = [
 			[0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 			[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 			[0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 		];
 
-		// Measurement: velocity should be zero
 		const x3: number = this.x[3] ?? 0;
 		const x4: number = this.x[4] ?? 0;
 		const x5: number = this.x[5] ?? 0;
-		const y = [-x3, -x4, -x5];
+		const y = [vel[0] - x3, vel[1] - x4, vel[2] - x5];
 
-		this.applyMeasurementUpdate(H, y, R_vel, 'updateVelocity');
+		this.applyMeasurementUpdate(H, y, R_vel, 'updateVelocityMeasurement');
+	}
+
+	/**
+	 * Zero-velocity update: when device is stationary, constrain velocity to [0,0,0].
+	 * This prevents velocity drift during rest periods.
+	 * @param R_vel Measurement noise for velocity (3x3), typically small e.g. 0.01
+	 */
+	updateVelocity(R_vel: number[][]): void {
+		this.updateVelocityMeasurement([0, 0, 0], R_vel);
 	}
 
 	/**
@@ -630,7 +640,7 @@ export class AEKFFilter {
 	 * and keep the quaternion unit-normalized with a consistent covariance.
 	 */
 	private sanitizeState(): void {
-		const vmax = 50.0; // m/s
+		const vmax = 5.0; // m/s
 		const bacc_max = 50.0; // m/s^2
 		const bgyro_max = 5.0; // rad/s (~286 deg/s)
 
