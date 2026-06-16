@@ -203,6 +203,18 @@ function appendRawPoint(lat: number, lon: number) {
 }
 
 function startRecording() {
+    // Ensure map is ready before starting recording
+    if (!mapReady.value) {
+        status.value = '⏳ Waiting for map to load...';
+        const unwatch = watch(mapReady, (v) => {
+            if (v) {
+                unwatch();
+                recording.value = true;
+                status.value = '🟢 Recording route';
+            }
+        });
+        return;
+    }
     recording.value = true;
     status.value = '🟢 Recording route';
 }
@@ -410,6 +422,14 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
             gyro[1] - calibrationData.value.gyroMean[1]!,
             gyro[2] - calibrationData.value.gyroMean[2]!,
         ];
+    }
+
+    // Heuristic: if device is essentially stationary (accel magnitude ~= g and gyro tiny),
+    // treat accel as gravity-only to avoid integrating noise into velocity.
+    const gyroMag = Math.sqrt(gyro[0] * gyro[0] + gyro[1] * gyro[1] + gyro[2] * gyro[2]);
+    const accelMag = Math.sqrt(accel[0] * accel[0] + accel[1] * accel[1] + accel[2] * accel[2]);
+    if (Math.abs(accelMag - 9.81) < 0.35 && gyroMag < 0.02) {
+        accel = [0, 0, 9.81];
     }
 
     filterInstance.predict(accel, gyro, dt);
@@ -688,9 +708,9 @@ const startRoughDemo = async () => {
                         <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
                             {{ xest.pos[2].toFixed(3) }}</div>
                         <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
-                            }}, {{ xest.vel[2].toFixed(3) }}</div>
+                        }}, {{ xest.vel[2].toFixed(3) }}</div>
                         <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
-                            }}, {{ xest.att[2].toFixed(3) }}</div>
+                        }}, {{ xest.att[2].toFixed(3) }}</div>
                         <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
                             xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
                         <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{
@@ -703,7 +723,7 @@ const startRoughDemo = async () => {
                         <div>Accel+Grav: {{debugData?.accelerationIncludingGravity ?
                             [debugData.accelerationIncludingGravity.x, debugData.accelerationIncludingGravity.y,
                             debugData.accelerationIncludingGravity.z].map(x => (x || 0).toFixed(2)).join(', ') :
-                            'waiting...' }} m/s²</div>
+                            'waiting...'}} m/s²</div>
                         <div>Gyro: {{debugData?.rotationRate ? [debugData.rotationRate.alpha,
                         debugData.rotationRate.beta, debugData.rotationRate.gamma].map(x => (x ||
                             0).toFixed(2)).join(', ') : 'waiting...' }} deg/s</div>
