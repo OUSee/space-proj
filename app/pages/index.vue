@@ -26,6 +26,7 @@ const info_gbody = ref<any>(null);
 const info_abody = ref<any>(null);
 
 let filterInstance: AEKFFilter | null = null;
+const ekfDiag = ref<any>({ history: [], lastEvent: '', predictCount: 0, updateCount: 0, lastNis: 0 });
 
 const latestIMU = ref<IMUData>({ accel: [0, 0, 0], gyro: [0, 0, 0], ts: 0 });
 const latestGPS = ref<{ lat: number; lon: number; alt: number; accuracy: number; ts: number } | null>(null);
@@ -54,6 +55,10 @@ const trajectory = ref<number[][]>([]);
 const covTraceHistory = ref<number[]>([]);
 const velMagHistory = ref<number[]>([]);
 const biasGyroHistory = ref<number[]>([]);
+const covVar = computed(() => {
+    if (!covTraceHistory.value.length) return 0;
+    return Math.max(...covTraceHistory.value) - Math.min(...covTraceHistory.value);
+});
 const viewTab = ref<'metrics' | 'aekf'>('metrics');
 const frameCount = ref(0);
 const lastFrameTime = ref(performance.now());
@@ -469,6 +474,19 @@ function initFilter() {
     const Q = MatrixUtils.eye(16).map((row) => row.map(() => 0.5));
     const R = MatrixUtils.eye(3).map((row) => row.map(() => 5.0));
     filterInstance = new AEKFFilter(initialX, initialP, Q, R);
+    // Wire debugCallback so UI receives real-time snapshots from the filter
+    filterInstance.debugCallback = (d: any) => {
+        try {
+            ekfDiag.value.history.push(d);
+            ekfDiag.value.lastEvent = d.event || ekfDiag.value.lastEvent;
+            if (d.event === 'predict') ekfDiag.value.predictCount++;
+            if (d.event === 'updatePosition' || d.event === 'updateVelocity') ekfDiag.value.updateCount++;
+            if (d.diagTrace !== undefined) ekfDiag.value.lastTrace = d.diagTrace;
+            if (d.nis !== undefined) ekfDiag.value.lastNis = d.nis;
+            // keep small history
+            while (ekfDiag.value.history.length > 200) ekfDiag.value.history.shift();
+        } catch (e) { }
+    };
     status.value = 'Filter ready – listening to IMU';
 
     // Initialize UI diagnostics immediately when the filter is created.
@@ -615,9 +633,9 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
         covTraceHistory.value.push(trace ?? 0);
         velMagHistory.value.push(velMag);
         biasGyroHistory.value.push(biasGyroMag);
-        while (covTraceHistory.value.length > 40) covTraceHistory.value.shift();
-        while (velMagHistory.value.length > 40) velMagHistory.value.shift();
-        while (biasGyroHistory.value.length > 40) biasGyroHistory.value.shift();
+        while (covTraceHistory.value.length > 100) covTraceHistory.value.shift();
+        while (velMagHistory.value.length > 100) velMagHistory.value.shift();
+        while (biasGyroHistory.value.length > 100) biasGyroHistory.value.shift();
     }
 
     frameCount.value++;
@@ -628,8 +646,13 @@ function renderSparkline(values: number[], width = 360, height = 120): string {
     if (!values.length) return '';
     const minVal = Math.min(...values);
     const maxVal = Math.max(...values);
-    const range = maxVal - minVal || 1;
     const step = width / Math.max(values.length - 1, 1);
+    if (Math.abs(maxVal - minVal) < 1e-8) {
+        // Degenerate: all values equal — draw a centered horizontal line
+        const y = (height / 2).toFixed(1);
+        return `M0,${y} L${width.toFixed(1)},${y}`;
+    }
+    const range = maxVal - minVal;
     return values
         .map((value, index) => {
             const x = index * step;
@@ -993,78 +1016,12 @@ onMounted(async () => {
                     v-show="viewTab === 'aekf'"
                     style="display: grid; gap: 16px;"
                 >
-                    <div style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
-                        <div style="font-weight: 600; margin-bottom: 12px;">AEKF confidence timeline</div>
-                        <svg
-                            width="100%"
-                            height="160"
-                            viewBox="0 0 360 160"
-                            style="background: #03070d; border-radius: 10px; display: block;"
-                        >
-                            <rect
-                                x="0"
-                                y="0"
-                                width="360"
-                                height="160"
-                                fill="#03070d"
-                            />
-                            <path
-                                :d="renderSparkline(covTraceHistory, 360, 120)"
-                                fill="none"
-                                stroke="#7fffd4"
-                                stroke-width="2"
-                            />
-                            <path
-                                :d="renderSparkline(velMagHistory, 360, 120)"
-                                fill="none"
-                                stroke="#ffb800"
-                                stroke-width="2"
-                                opacity="0.9"
-                            />
-                            <path
-                                :d="renderSparkline(biasGyroHistory, 360, 120)"
-                                fill="none"
-                                stroke="#ff6b6b"
-                                stroke-width="2"
-                                opacity="0.8"
-                            />
-                            <line
-                                x1="0"
-                                y1="150"
-                                x2="360"
-                                y2="150"
-                                stroke="#2f9fdf"
-                                stroke-width="0.5"
-                                opacity="0.4"
-                            />
-                        </svg>
-                        <div
-                            style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; color: #b8d8ff; margin-top: 10px;">
-                            <span>Trace = uncertainty, yellow = speed, red = gyro bias</span>
-                            <span :style="{ color: diagnostics?.isStationary ? '#7fffd4' : '#ff6b6b' }">{{
-                                diagnostics?.isStationary ? 'Stationary' : 'Moving' }}</span>
-                        </div>
-                    </div>
-                    <div style="display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
-                        <div
-                            style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
-                            <div style="font-size: 0.92rem; font-weight: 600; margin-bottom: 8px;">Latest trace</div>
-                            <div style="font-size: 1.5rem; color: #7fffd4;">{{ diagnostics?.covTrace?.toFixed(1) || '–'
-                                }}</div>
-                        </div>
-                        <div
-                            style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
-                            <div style="font-size: 0.92rem; font-weight: 600; margin-bottom: 8px;">Current speed</div>
-                            <div style="font-size: 1.5rem; color: #ffb800;">{{ diagnostics?.velMag?.toFixed(2) || '–' }}
-                                m/s</div>
-                        </div>
-                        <div
-                            style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
-                            <div style="font-size: 0.92rem; font-weight: 600; margin-bottom: 8px;">Gyro bias</div>
-                            <div style="font-size: 1.5rem; color: #ff6b6b;">{{ diagnostics?.biasGyroMag?.toFixed(5) ||
-                                '–' }}</div>
-                        </div>
-                    </div>
+                    <AEKFGraphic
+                        :diag="ekfDiag.value"
+                        :covTraceHistory="covTraceHistory"
+                        :velMagHistory="velMagHistory"
+                        :biasGyroHistory="biasGyroHistory"
+                    />
                 </div>
             </div>
 
