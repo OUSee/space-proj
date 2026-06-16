@@ -28,6 +28,10 @@ export class MatrixUtils {
 		}
 		return A.map((row) => row.reduce((sum, el, i) => sum + el * v[i]!, 0));
 	}
+	static vectorDot(a: number[], b: number[]): number {
+		if (a.length !== b.length) throw new Error('Vector lengths must match');
+		return a.reduce((sum, el, i) => sum + el * b[i]!, 0);
+	}
 	static inverse(A: number[][]): number[][] {
 		// Simple 3x3 inverse for demo
 		if (A.length !== 3 || !A[0] || A[0].length !== 3) return A; // placeholder

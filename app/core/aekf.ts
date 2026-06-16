@@ -132,6 +132,10 @@ export class AEKFFilter {
 		for (let i = 0; i < 3; i++) F[i]![i + 3] = dt;
 		// Velocity from accelerometer bias
 		for (let i = 0; i < 3; i++) F[i + 3]![i + 9] = -dt;
+		// Attitude error → velocity error via gravity coupling
+		// This helps the filter understand that roll/pitch errors create velocity drift.
+		F[3]![7] = dt * this.g;
+		F[4]![6] = -dt * this.g;
 		// Attitude from gyro bias
 		for (let i = 0; i < 3; i++) F[i + 6]![i + 12] = -dt;
 
@@ -164,6 +168,14 @@ export class AEKFFilter {
 		const HPHt = MatrixUtils.multiply(HP, Ht);
 		const S = MatrixUtils.add(HPHt, R_pos); // correct: HPHt + R
 		const invS = MatrixUtils.inverse(S);
+		const nis = MatrixUtils.vectorDot(
+			y,
+			MatrixUtils.matrixVectorMultiply(invS, y),
+		);
+		if (nis > 16.0) {
+			console.warn('AEKF GPS innovation gated', { nis, y, R_pos });
+			return;
+		}
 		const K = MatrixUtils.multiply(MatrixUtils.multiply(this.P, Ht), invS);
 
 		// Update state
