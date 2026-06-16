@@ -301,11 +301,11 @@ async function calibrateSensors(): Promise<void> {
                 window.removeEventListener('devicemotion', handler);
                 const accelMean = accelSamples.length
                     ? accelSamples.reduce((a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]])
-                          .map((v) => v / accelSamples.length)
+                        .map((v) => v / accelSamples.length)
                     : [0, 0, 0];
                 const gyroMean = gyroSamples.length
                     ? gyroSamples.reduce((a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]])
-                          .map((v) => v / gyroSamples.length)
+                        .map((v) => v / gyroSamples.length)
                     : [0, 0, 0];
                 calibrationData.value = { accelMean, gyroMean };
                 status.value = '✅ Calibration done. Starting filter...';
@@ -593,25 +593,35 @@ const startRoughDemo = async () => {
         >
             <h2 style="margin-bottom: 0.5rem;">Navigation Demo — Map + EKF Track</h2>
 
-            <div style="margin: 16px 0; padding: 14px; background: #0c1118; border: 1px solid #2f9fdf; border-radius: 10px;">
+            <div
+                style="margin: 16px 0; padding: 14px; background: #0c1118; border: 1px solid #2f9fdf; border-radius: 10px;">
                 <strong>Status:</strong> {{ status }}
             </div>
 
-            <div style="display: grid; gap: 16px; margin-bottom: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
+            <div
+                style="display: grid; gap: 16px; margin-bottom: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
                 <div style="padding: 16px; background: #11181f; border: 1px solid #2f9fdf; border-radius: 10px;">
                     <strong>Permissions</strong>
                     <div style="margin-top: 12px; display: grid; gap: 10px;">
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
                             <span>Gyro / Accel</span>
-                            <span :style="{ color: gyroGranted ? '#7fffd4' : '#ff6b6b' }">{{ gyroGranted ? 'ACTIVE' : 'INACTIVE' }}</span>
+                            <span :style="{ color: gyroGranted ? '#7fffd4' : '#ff6b6b' }">{{ gyroGranted ? 'ACTIVE' :
+                                'INACTIVE' }}</span>
                         </div>
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
                             <span>GPS</span>
-                            <span :style="{ color: geoGranted ? '#7fffd4' : '#ff6b6b' }">{{ geoGranted ? 'ACTIVE' : 'INACTIVE' }}</span>
+                            <span :style="{ color: geoGranted ? '#7fffd4' : '#ff6b6b' }">{{ geoGranted ? 'ACTIVE' :
+                                'INACTIVE' }}</span>
                         </div>
                         <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px;">
-                            <button @click="requestSensorPermissions" style="flex: 1 1 120px; padding: 10px; background: #2f9fdf; color: #000; border: none; border-radius: 8px; cursor: pointer;">Enable Sensors</button>
-                            <button @click="requestGeoPermission" style="flex: 1 1 120px; padding: 10px; background: #6bcf74; color: #000; border: none; border-radius: 8px; cursor: pointer;">Enable GPS</button>
+                            <button
+                                @click="requestSensorPermissions"
+                                style="flex: 1 1 120px; padding: 10px; background: #2f9fdf; color: #000; border: none; border-radius: 8px; cursor: pointer;"
+                            >Enable Sensors</button>
+                            <button
+                                @click="requestGeoPermission"
+                                style="flex: 1 1 120px; padding: 10px; background: #6bcf74; color: #000; border: none; border-radius: 8px; cursor: pointer;"
+                            >Enable GPS</button>
                         </div>
                     </div>
                 </div>
@@ -619,9 +629,18 @@ const startRoughDemo = async () => {
                 <div style="padding: 16px; background: #11181f; border: 1px solid #2f9fdf; border-radius: 10px;">
                     <strong>Route Control</strong>
                     <div style="margin-top: 12px; display: grid; gap: 10px;">
-                        <button @click="toggleRecording" style="padding: 10px; background: #ffb800; color: #000; border: none; border-radius: 8px; cursor: pointer;">{{ recordingLabel }}</button>
-                        <button @click="clearTrack" style="padding: 10px; background: #ff4b4b; color: #000; border: none; border-radius: 8px; cursor: pointer;">Clear Track</button>
-                        <button @click="toggleShowFiltered" style="padding: 10px; background: #7dd3fc; color: #000; border: none; border-radius: 8px; cursor: pointer;">Display {{ displayMode }}</button>
+                        <button
+                            @click="toggleRecording"
+                            style="padding: 10px; background: #ffb800; color: #000; border: none; border-radius: 8px; cursor: pointer;"
+                        >{{ recordingLabel }}</button>
+                        <button
+                            @click="clearTrack"
+                            style="padding: 10px; background: #ff4b4b; color: #000; border: none; border-radius: 8px; cursor: pointer;"
+                        >Clear Track</button>
+                        <button
+                            @click="toggleShowFiltered"
+                            style="padding: 10px; background: #7dd3fc; color: #000; border: none; border-radius: 8px; cursor: pointer;"
+                        >Display {{ displayMode }}</button>
                     </div>
                 </div>
 
@@ -638,12 +657,21 @@ const startRoughDemo = async () => {
                 </div>
             </div>
 
-            <div style="padding: 16px; background: #11181f; border: 1px solid #2f9fdf; border-radius: 10px; margin-bottom: 24px;">
+            <div
+                style="padding: 16px; background: #11181f; border: 1px solid #2f9fdf; border-radius: 10px; margin-bottom: 24px;">
                 <div style="display: grid; gap: 10px;">
                     <div style="font-weight: bold;">Map view</div>
                     <div style="min-height: 420px; border-radius: 12px; overflow: hidden; background: #000;">
-                        <div v-if="!mapReady" style="height: 420px; display: flex; align-items: center; justify-content: center; color: #7f9cff;">Loading map…</div>
-                        <div ref="mapEl" v-else id="map" style="width: 100%; height: 420px;"></div>
+                        <div
+                            v-if="!mapReady"
+                            style="height: 420px; display: flex; align-items: center; justify-content: center; color: #7f9cff;"
+                        >Loading map…</div>
+                        <div
+                            ref="mapEl"
+                            v-else
+                            id="map"
+                            style="width: 100%; height: 420px;"
+                        ></div>
                     </div>
                     <div style="display: flex; gap: 10px; flex-wrap: wrap; color: #b8d8ff; font-size: 0.95rem;">
                         <span>Filtered route is <strong>{{ showFiltered ? 'visible' : 'hidden' }}</strong>.</span>
@@ -652,24 +680,37 @@ const startRoughDemo = async () => {
                 </div>
             </div>
 
-            <div style="display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-bottom: 24px;">
+            <div
+                style="display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-bottom: 24px;">
                 <div style="padding: 16px; background: #11181f; border: 1px solid #2f9fdf; border-radius: 10px;">
                     <strong>EKF state</strong>
                     <div style="margin-top: 12px; font-size: 0.95rem; line-height: 1.7;">
-                        <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }}, {{ xest.pos[2].toFixed(3) }}</div>
-                        <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3) }}, {{ xest.vel[2].toFixed(3) }}</div>
-                        <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3) }}, {{ xest.att[2].toFixed(3) }}</div>
-                        <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{ xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
-                        <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{ xest.biasGyro[1].toFixed(3) }}, {{ xest.biasGyro[2].toFixed(3) }}</div>
+                        <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
+                            {{ xest.pos[2].toFixed(3) }}</div>
+                        <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
+                            }}, {{ xest.vel[2].toFixed(3) }}</div>
+                        <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
+                            }}, {{ xest.att[2].toFixed(3) }}</div>
+                        <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
+                            xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
+                        <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{
+                            xest.biasGyro[1].toFixed(3) }}, {{ xest.biasGyro[2].toFixed(3) }}</div>
                     </div>
                 </div>
                 <div style="padding: 16px; background: #11181f; border: 1px solid #2f9fdf; border-radius: 10px;">
                     <strong>Sensor stream</strong>
                     <div style="margin-top: 12px; font-size: 0.95rem; line-height: 1.7; color: #b8d8ff;">
-                        <div>Accel+Grav: {{ debugData?.accelerationIncludingGravity ? [debugData.accelerationIncludingGravity.x, debugData.accelerationIncludingGravity.y, debugData.accelerationIncludingGravity.z].map(x => (x || 0).toFixed(2)).join(', ') : 'waiting...' }} m/s²</div>
-                        <div>Gyro: {{ debugData?.rotationRate ? [debugData.rotationRate.alpha, debugData.rotationRate.beta, debugData.rotationRate.gamma].map(x => (x || 0).toFixed(2)).join(', ') : 'waiting...' }} deg/s</div>
-                        <div>DVO: {{ DVOData?.alpha?.toFixed(1) || '–' }}, {{ DVOData?.beta?.toFixed(1) || '–' }}, {{ DVOData?.gamma?.toFixed(1) || '–' }}</div>
-                        <div>Last IMU ts: {{ debugData?.timestamp ? new Date(debugData.timestamp).toLocaleTimeString() : 'none' }}</div>
+                        <div>Accel+Grav: {{debugData?.accelerationIncludingGravity ?
+                            [debugData.accelerationIncludingGravity.x, debugData.accelerationIncludingGravity.y,
+                            debugData.accelerationIncludingGravity.z].map(x => (x || 0).toFixed(2)).join(', ') :
+                            'waiting...' }} m/s²</div>
+                        <div>Gyro: {{debugData?.rotationRate ? [debugData.rotationRate.alpha,
+                        debugData.rotationRate.beta, debugData.rotationRate.gamma].map(x => (x ||
+                            0).toFixed(2)).join(', ') : 'waiting...' }} deg/s</div>
+                        <div>DVO: {{ DVOData?.alpha?.toFixed(1) || '–' }}, {{ DVOData?.beta?.toFixed(1) || '–' }}, {{
+                            DVOData?.gamma?.toFixed(1) || '–' }}</div>
+                        <div>Last IMU ts: {{ debugData?.timestamp ? new Date(debugData.timestamp).toLocaleTimeString() :
+                            'none' }}</div>
                     </div>
                 </div>
             </div>
@@ -681,6 +722,7 @@ const startRoughDemo = async () => {
 button:hover {
     opacity: 0.85;
 }
+
 #map {
     width: 100%;
     height: 100%;
