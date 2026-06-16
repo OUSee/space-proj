@@ -2,7 +2,7 @@
     setup
     lang="ts"
 >
-import { onMounted, ref, computed, watch } from 'vue';
+import { onMounted, ref, computed, watch, nextTick } from 'vue';
 import { AEKFFilter } from '~/core/aekf';
 import { MatrixUtils } from '~/core/matrix';
 import { useGeolocation } from '@vueuse/core';
@@ -31,6 +31,7 @@ const latestGPS = ref<{ lat: number; lon: number; alt: number; accuracy: number;
 const currentRawEnu = ref<[number, number, number] | null>(null);
 const currentFilteredLatLng = ref<{ lat: number; lon: number; alt: number } | null>(null);
 const showFiltered = ref(true);
+const mapFollowMode = ref<'filtered' | 'raw' | 'both'>('filtered');
 const recording = ref(false);
 const trackPoints = ref<Array<{ lat: number; lon: number; ts: number }>>([]);
 const rawTrackPoints = ref<Array<{ lat: number; lon: number; ts: number }>>([]);
@@ -187,16 +188,44 @@ watch(showFiltered, (value) => {
 
 function updateMapView(rawLat: number, rawLon: number, filtered?: { lat: number; lon: number }) {
     if (!map) return;
-    const latitude = filtered?.lat ?? rawLat;
-    const longitude = filtered?.lon ?? rawLon;
-
     if (rawMarker) rawMarker.setLatLng([rawLat, rawLon]);
     if (filtered && filteredMarker) filteredMarker.setLatLng([filtered.lat, filtered.lon]);
 
-    if (!recording.value) {
-        map.setView([latitude, longitude], 17, { animate: false });
+    // Choose how the map follows position based on user preference
+    if (mapFollowMode.value === 'filtered' && filtered) {
+        if (!recording.value) map.setView([filtered.lat, filtered.lon], 17, { animate: false });
+        else map.panTo([filtered.lat, filtered.lon], { animate: false });
+        return;
+    }
+
+    if (mapFollowMode.value === 'raw') {
+        if (!recording.value) map.setView([rawLat, rawLon], 17, { animate: false });
+        else map.panTo([rawLat, rawLon], { animate: false });
+        return;
+    }
+
+    // both: try to fit bounds of raw+filtered if available, otherwise fallback to filtered/raw
+    if (mapFollowMode.value === 'both' && filtered) {
+        // fit bounds to show both raw and filtered positions
+        try {
+            map.fitBounds([
+                [rawLat, rawLon],
+                [filtered.lat, filtered.lon],
+            ], { animate: false, padding: [30, 30] });
+        } catch (e) {
+            if (!recording.value) map.setView([filtered.lat, filtered.lon], 17, { animate: false });
+            else map.panTo([filtered.lat, filtered.lon], { animate: false });
+        }
+        return;
+    }
+
+    // fallback
+    if (filtered) {
+        if (!recording.value) map.setView([filtered.lat, filtered.lon], 17, { animate: false });
+        else map.panTo([filtered.lat, filtered.lon], { animate: false });
     } else {
-        map.panTo([latitude, longitude], { animate: false });
+        if (!recording.value) map.setView([rawLat, rawLon], 17, { animate: false });
+        else map.panTo([rawLat, rawLon], { animate: false });
     }
 }
 
@@ -302,6 +331,8 @@ watch(
                 currentFilteredLatLng.value = filteredGeo;
                 if (recording.value) appendTrackPoint(filteredGeo);
                 updateMapView(c.latitude, c.longitude, filteredGeo);
+                // Diagnostics: log GPS vs filtered occasionally
+                console.log('GPS update', { raw: { lat: c.latitude, lon: c.longitude, acc: c.accuracy }, filtered: filteredGeo });
             }
         }
 
@@ -424,18 +455,10 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
         (event.rotationRate?.gamma ?? 0) * Math.PI / 180,
     ];
 
-    if (calibrationData.value) {
-        accel = [
-            accel[0] - calibrationData.value.accelMean[0]!,
-            accel[1] - calibrationData.value.accelMean[1]!,
-            accel[2] - calibrationData.value.accelMean[2]!,
-        ];
-        gyro = [
-            gyro[0] - calibrationData.value.gyroMean[0]!,
-            gyro[1] - calibrationData.value.gyroMean[1]!,
-            gyro[2] - calibrationData.value.gyroMean[2]!,
-        ];
-    }
+    // Note: do NOT subtract calibration means here. The filter's bias state
+    // already holds static sensor biases (initialized in initFilter). Passing
+    // raw `accelerationIncludingGravity` to the filter and letting it remove
+    // biases during predict prevents double-correction and growing velocity.
 
     // Heuristic: if device is essentially stationary (accel magnitude ~= g and gyro tiny),
     // treat accel as gravity-only to avoid integrating noise into velocity.
@@ -470,6 +493,17 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
         currentFilteredLatLng.value = filteredGeo;
         updateMapView(latestGPS.value?.lat ?? filteredGeo.lat, latestGPS.value?.lon ?? filteredGeo.lon, filteredGeo);
         if (recording.value) appendTrackPoint(filteredGeo);
+    }
+
+    // Diagnostics: periodic logging of EKF state to help track drift
+    const vel = xest.value.vel;
+    const pos = xest.value.pos;
+    const velMag = Math.sqrt(vel[0] * vel[0] + vel[1] * vel[1] + vel[2] * vel[2]);
+    if (frameCount.value % 100 === 0) {
+        console.log('EKF tick', { dt, pos, vel, velMag, gps: latestGPS.value });
+    }
+    if (velMag > 0.5) {
+        console.warn('High velocity detected', { velMag, pos, vel });
     }
 
     frameCount.value++;
@@ -715,6 +749,17 @@ onMounted(async () => {
                     <div style="display: flex; gap: 10px; flex-wrap: wrap; color: #b8d8ff; font-size: 0.95rem;">
                         <span>Filtered route is <strong>{{ showFiltered ? 'visible' : 'hidden' }}</strong>.</span>
                         <span>Raw track remains visible in blue.</span>
+                        <span style="display:flex; align-items:center; gap:8px;">
+                            <label style="font-size:0.9rem;">Map follow:</label>
+                            <select
+                                v-model="mapFollowMode"
+                                style="background:#0c1118; color:#b8d8ff; border:1px solid #2f9fdf; border-radius:6px; padding:6px;"
+                            >
+                                <option value="filtered">Filtered</option>
+                                <option value="raw">Raw</option>
+                                <option value="both">Both</option>
+                            </select>
+                        </span>
                     </div>
                 </div>
             </div>
@@ -727,9 +772,9 @@ onMounted(async () => {
                         <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
                             {{ xest.pos[2].toFixed(3) }}</div>
                         <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
-                            }}, {{ xest.vel[2].toFixed(3) }}</div>
+                        }}, {{ xest.vel[2].toFixed(3) }}</div>
                         <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
-                            }}, {{ xest.att[2].toFixed(3) }}</div>
+                        }}, {{ xest.att[2].toFixed(3) }}</div>
                         <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
                             xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
                         <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{
