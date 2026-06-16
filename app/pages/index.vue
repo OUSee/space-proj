@@ -1010,7 +1010,7 @@ onMounted(async () => {
                             style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
                             <div style="font-size: 0.92rem; font-weight: 600; margin-bottom: 8px;">Latest trace</div>
                             <div style="font-size: 1.5rem; color: #7fffd4;">{{ diagnostics?.covTrace?.toFixed(1) || '–'
-                                }}</div>
+                            }}</div>
                         </div>
                         <div
                             style="padding: 16px; background: #0b1220; border: 1px solid #174a83; border-radius: 10px;">
@@ -1036,9 +1036,9 @@ onMounted(async () => {
                         <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
                             {{ xest.pos[2].toFixed(3) }}</div>
                         <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
-                        }}, {{ xest.vel[2].toFixed(3) }}</div>
+                            }}, {{ xest.vel[2].toFixed(3) }}</div>
                         <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
-                        }}, {{ xest.att[2].toFixed(3) }}</div>
+                            }}, {{ xest.att[2].toFixed(3) }}</div>
                         <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
                             xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
                         <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{
