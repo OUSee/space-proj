@@ -83,7 +83,11 @@ export class AEKFFilter {
 
 		const quat = new Quaternion(qx!, qy!, qz!, qw!);
 		const omega = new Quaternion(gx, gy, gz, 0);
-		const qDot = quat.clone().multiply(omega).multiplyScalar(0.5);
+		const qDot = quat.clone().multiply(omega);
+		qDot.x *= 0.5;
+		qDot.y *= 0.5;
+		qDot.z *= 0.5;
+		qDot.w *= 0.5;
 		quat.x += qDot.x * dt;
 		quat.y += qDot.y * dt;
 		quat.z += qDot.z * dt;

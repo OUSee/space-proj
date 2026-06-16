@@ -595,7 +595,7 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
     trajectory.value.push([...xest.value.pos]);
     if (trajectory.value.length > 2000) trajectory.value.shift();
 
-    if (refSet && filterHasGpsFix.value) {
+    if (refSet) {
         const filteredGeo = enuToGeodetic(
             xest.value.pos[0],
             xest.value.pos[1],
@@ -605,7 +605,9 @@ function handleDeviceMotion(event: DeviceMotionEvent) {
             refAlt,
         );
         currentFilteredLatLng.value = filteredGeo;
-        updateMapView(latestGPS.value?.lat ?? filteredGeo.lat, latestGPS.value?.lon ?? filteredGeo.lon, filteredGeo);
+        const rawLat = latestGPS.value?.lat ?? filteredGeo.lat;
+        const rawLon = latestGPS.value?.lon ?? filteredGeo.lon;
+        updateMapView(rawLat, rawLon, filteredGeo);
         if (recording.value) appendTrackPoint(filteredGeo);
     }
 
@@ -755,13 +757,38 @@ function startSimulation() {
     gyroGranted.value = true;
     geoGranted.value = true;
     calibrationData.value = { accelMean: [0, 0, 9.81], gyroMean: [0, 0, 0] };
+    calibrationCompleted.value = true;
+    filterHasGpsFix.value = false;
+    viewTab.value = 'aekf';
+    if (!refSet) {
+        const center = map?.getCenter();
+        if (center) {
+            refLat = center.lat;
+            refLon = center.lng;
+            refAlt = 0;
+        } else {
+            refLat = 51.65172;
+            refLon = 39.17852;
+            refAlt = 0;
+        }
+        refSet = true;
+        currentFilteredLatLng.value = { lat: refLat, lon: refLon, alt: refAlt };
+    }
     initFilter();
 
     let time = 0;
     simulateInterval = setInterval(() => {
         time += 0.1;
-        const fakeAccel = [0, 0, 9.81];
-        const fakeGyro = [0.1 * Math.sin(time), 0.1 * Math.cos(time), 0];
+        const fakeAccel = [
+            0.4 * Math.sin(time * 0.45),
+            0.2 * Math.cos(time * 0.6),
+            9.81,
+        ];
+        const fakeGyro = [
+            0,
+            0,
+            (10 + 3 * Math.sin(time * 0.6)) * Math.PI / 180,
+        ];
         debugData.value = {
             acceleration: null,
             accelerationIncludingGravity: { x: fakeAccel[0]!, y: fakeAccel[1]!, z: fakeAccel[2]! },
@@ -1048,9 +1075,9 @@ onMounted(async () => {
                         <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
                             {{ xest.pos[2].toFixed(3) }}</div>
                         <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
-                        }}, {{ xest.vel[2].toFixed(3) }}</div>
+                            }}, {{ xest.vel[2].toFixed(3) }}</div>
                         <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
-                        }}, {{ xest.att[2].toFixed(3) }}</div>
+                            }}, {{ xest.att[2].toFixed(3) }}</div>
                         <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
                             xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
                         <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{

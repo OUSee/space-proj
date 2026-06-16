@@ -74,6 +74,7 @@ const timeline = computed(() => {
 const tl = computed(() => timeline.value.slice(-120));
 
 const nisVals = computed(() => history.value.map((d: any) => d.nis).filter((v: any) => typeof v === 'number'));
+const hasHistory = computed(() => history.value.length > 0 || props.covTraceHistory?.length > 0 || props.velMagHistory?.length > 0 || props.biasGyroHistory?.length > 0);
 </script>
 
 <template>
@@ -103,6 +104,15 @@ const nisVals = computed(() => history.value.map((d: any) => d.nis).filter((v: a
                 height="140"
                 fill="#02060b"
             />
+            <text
+                v-if="!hasHistory"
+                x="180"
+                y="75"
+                text-anchor="middle"
+                fill="#7f9cff"
+                font-size="14"
+                opacity="0.75"
+            >Waiting for EKF data…</text>
             <path
                 :d="renderSparkline(covTraceHistory, 360, 100)"
                 fill="none"
