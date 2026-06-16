@@ -750,8 +750,10 @@ onMounted(async () => {
                             :disabled="isCalibrating || calibrationCompleted"
                             style="padding: 10px; background: #d946a6; color: #000; border: none; border-radius: 8px; cursor: pointer; opacity: 0.9;"
                             :style="{ opacity: isCalibrating || calibrationCompleted ? 0.5 : 0.9, cursor: isCalibrating || calibrationCompleted ? 'not-allowed' : 'pointer' }"
-                        >{{ isCalibrating ? 'Calibrating...' : calibrationCompleted ? 'Recalibrate' : 'Start
-                            Calibration' }}</button>
+                        >
+                            {{ isCalibrating ? 'Calibrating...' : calibrationCompleted ? 'Recalibrate' :
+                                'StartCalibration' }}
+                        </button>
                     </div>
                 </div>
 
@@ -828,9 +830,9 @@ onMounted(async () => {
                         <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
                             {{ xest.pos[2].toFixed(3) }}</div>
                         <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
-                        }}, {{ xest.vel[2].toFixed(3) }}</div>
+                            }}, {{ xest.vel[2].toFixed(3) }}</div>
                         <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
-                        }}, {{ xest.att[2].toFixed(3) }}</div>
+                            }}, {{ xest.att[2].toFixed(3) }}</div>
                         <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
                             xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
                         <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{
