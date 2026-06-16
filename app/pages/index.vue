@@ -746,9 +746,11 @@ const close3D = () => {
 };
 
 let simulateInterval: number | null = null;
+const simulateRunning = ref(false);
 
 function startSimulation() {
     if (simulateInterval) return;
+    simulateRunning.value = true;
     status.value = 'Simulation started - fake sensor data';
     gyroGranted.value = true;
     geoGranted.value = true;
@@ -778,10 +780,16 @@ function startSimulation() {
 
 function stopSimulation() {
     if (simulateInterval) {
-        clearInterval(simulateInterval);
+        clearInterval(simulateInterval as any);
         simulateInterval = null;
+        simulateRunning.value = false;
         status.value = 'Simulation stopped';
     }
+}
+
+function simulateMotion() {
+    if (simulateRunning.value) stopSimulation();
+    else startSimulation();
 }
 
 let roughDemoInstance: {
@@ -963,8 +971,9 @@ onMounted(async () => {
                 style="padding: 16px; background: #11181f; border: 1px solid #2f9fdf; border-radius: 10px; margin-bottom: 24px;">
                 <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;">
                     <div style="font-weight: 700;">EKF dashboard</div>
+
                     <button
-                        @click="viewTab = 'metrics'"
+                        @click="() => (viewTab = 'metrics')"
                         :style="{
                             padding: '10px 14px',
                             borderRadius: '8px',
@@ -974,8 +983,9 @@ onMounted(async () => {
                             cursor: 'pointer',
                         }"
                     >Metrics</button>
+
                     <button
-                        @click="viewTab = 'aekf'"
+                        @click="() => (viewTab = 'aekf')"
                         :style="{
                             padding: '10px 14px',
                             borderRadius: '8px',
@@ -985,6 +995,11 @@ onMounted(async () => {
                             cursor: 'pointer',
                         }"
                     >AEKF Graphic</button>
+
+                    <button
+                        @click="simulateMotion"
+                        style="margin-left: auto; padding:8px 12px; background:#6bcf74; border-radius:8px; border:1px solid #2f9fdf; color:#000; cursor:pointer;"
+                    >{{ simulateRunning ? 'Stop Simulation' : 'Simulate Motion' }}</button>
                 </div>
 
                 <div
@@ -1033,9 +1048,9 @@ onMounted(async () => {
                         <div><strong>Position [m]:</strong> {{ xest.pos[0].toFixed(3) }}, {{ xest.pos[1].toFixed(3) }},
                             {{ xest.pos[2].toFixed(3) }}</div>
                         <div><strong>Velocity [m/s]:</strong> {{ xest.vel[0].toFixed(3) }}, {{ xest.vel[1].toFixed(3)
-                        }}, {{ xest.vel[2].toFixed(3) }}</div>
+                            }}, {{ xest.vel[2].toFixed(3) }}</div>
                         <div><strong>Attitude [rad]:</strong> {{ xest.att[0].toFixed(3) }}, {{ xest.att[1].toFixed(3)
-                        }}, {{ xest.att[2].toFixed(3) }}</div>
+                            }}, {{ xest.att[2].toFixed(3) }}</div>
                         <div><strong>Accel bias:</strong> {{ xest.biasAcc[0].toFixed(3) }}, {{
                             xest.biasAcc[1].toFixed(3) }}, {{ xest.biasAcc[2].toFixed(3) }}</div>
                         <div><strong>Gyro bias:</strong> {{ xest.biasGyro[0].toFixed(3) }}, {{

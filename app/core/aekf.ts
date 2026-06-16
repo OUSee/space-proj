@@ -304,17 +304,20 @@ export class AEKFFilter {
 		// Sanity clamp after measurement update
 		this.sanitizeState();
 
-		// Diagnostics snapshot for position update
+		// Diagnostics snapshot for position update (include nis, P and Q for UI)
 		try {
 			const Pdiag = this.P.map((row, i) =>
 				row && row[i] !== undefined ? row[i] : 0,
 			);
-			const dbg = {
+			const dbg: any = {
 				event: 'updatePosition',
 				posMeasured: pos,
 				statePos: [this.x[0], this.x[1], this.x[2]],
 				Pdiag,
+				nis,
 				diagTrace: this.getCovarianceTrace(),
+				P: this.P,
+				Q: this.Q,
 			};
 			console.debug('AEKF', dbg);
 			if (this.debugCallback) this.debugCallback(dbg);

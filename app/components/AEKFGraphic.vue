@@ -32,6 +32,48 @@ function renderSparkline(values: number[], width = 360, height = 120): string {
 const latestTrace = computed(() => props.covTraceHistory?.[props.covTraceHistory.length - 1] ?? 0);
 const latestVel = computed(() => props.velMagHistory?.[props.velMagHistory.length - 1] ?? 0);
 const latestBias = computed(() => props.biasGyroHistory?.[props.biasGyroHistory.length - 1] ?? 0);
+
+const history = computed(() => (props.diag && props.diag.history) ? props.diag.history : []);
+const latest = computed(() => history.value.length ? history.value[history.value.length - 1] : {});
+
+function sliceMatrix(mat: number[][], maxN = 8) {
+    if (!mat || !mat.length) return [];
+    const n = Math.min(maxN, mat.length);
+    const out: number[][] = [];
+    for (let i = 0; i < n; i++) {
+        out.push(mat[i]!.slice(0, n));
+    }
+    return out;
+}
+
+function matrixStats(mat: number[][]) {
+    let min = Infinity, max = -Infinity;
+    for (const row of mat) for (const v of row) { if (v < min) min = v; if (v > max) max = v; }
+    if (min === Infinity) { min = 0; max = 0; }
+    return { min, max };
+}
+
+function heatColor(norm: number) {
+    // norm in [0..1] -> blue->green->red
+    const r = Math.round(Math.min(255, Math.max(0, 255 * norm)));
+    const g = Math.round(Math.min(200, Math.max(0, 200 * (1 - Math.abs(norm - 0.5) * 2))));
+    const b = Math.round(Math.min(200, Math.max(0, 200 * (1 - norm))));
+    return `rgb(${r},${g},${b})`;
+}
+
+const Pmatrix = computed(() => sliceMatrix(latest.value.P || [], 8));
+const Qmatrix = computed(() => sliceMatrix(latest.value.Q || [], 8));
+
+const Pstats = computed(() => matrixStats(Pmatrix.value));
+const Qstats = computed(() => matrixStats(Qmatrix.value));
+
+const timeline = computed(() => {
+    const recent = history.value.slice(-120);
+    return recent.map((d: any) => ({ event: d.event || 'tick', t: d.t || 0 }));
+});
+const tl = computed(() => timeline.value.slice(-120));
+
+const nisVals = computed(() => history.value.map((d: any) => d.nis).filter((v: any) => typeof v === 'number'));
 </script>
 
 <template>
@@ -84,6 +126,150 @@ const latestBias = computed(() => props.biasGyroHistory?.[props.biasGyroHistory.
         </svg>
 
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap:10px;">
+            <div style="padding:10px; background:#07101a; border-radius:8px; border:1px solid #173a56;">
+                <div style="font-weight:600">P matrix (8x8)</div>
+                <div style="margin-top:8px;">
+                    <svg
+                        width="180"
+                        height="180"
+                        viewBox="0 0 80 80"
+                    >
+                        <rect
+                            x="0"
+                            y="0"
+                            width="80"
+                            height="80"
+                            fill="#07101a"
+                        />
+                        <g>
+                            <template
+                                v-for="(row, rIndex) in Pmatrix"
+                                :key="'prow' + rIndex"
+                            >
+                                <template
+                                    v-for="(val, cIndex) in row"
+                                    :key="'pcell' + rIndex + '-' + cIndex"
+                                >
+                                    <rect
+                                        :x="cIndex * 9"
+                                        :y="rIndex * 9"
+                                        width="9"
+                                        height="9"
+                                        :fill="(Pstats.max > Pstats.min) ? heatColor((val - Pstats.min) / (Pstats.max - Pstats.min)) : '#123'"
+                                        stroke="#0b2b3a"
+                                        stroke-width="0.3"
+                                    />
+                                </template>
+                            </template>
+                        </g>
+                    </svg>
+                </div>
+            </div>
+
+            <div style="padding:10px; background:#07101a; border-radius:8px; border:1px solid #173a56;">
+                <div style="font-weight:600">Q matrix (8x8)</div>
+                <div style="margin-top:8px;">
+                    <svg
+                        width="180"
+                        height="180"
+                        viewBox="0 0 80 80"
+                    >
+                        <rect
+                            x="0"
+                            y="0"
+                            width="80"
+                            height="80"
+                            fill="#07101a"
+                        />
+                        <g>
+                            <template
+                                v-for="(row, rIndex) in Qmatrix"
+                                :key="'qrow' + rIndex"
+                            >
+                                <template
+                                    v-for="(val, cIndex) in row"
+                                    :key="'qcell' + rIndex + '-' + cIndex"
+                                >
+                                    <rect
+                                        :x="cIndex * 9"
+                                        :y="rIndex * 9"
+                                        width="9"
+                                        height="9"
+                                        :fill="(Qstats.max > Qstats.min) ? heatColor((val - Qstats.min) / (Qstats.max - Qstats.min)) : '#123'"
+                                        stroke="#0b2b3a"
+                                        stroke-width="0.3"
+                                    />
+                                </template>
+                            </template>
+                        </g>
+                    </svg>
+                </div>
+            </div>
+
+            <div style="padding:10px; background:#07101a; border-radius:8px; border:1px solid #173a56;">
+                <div style="font-weight:600">Event timeline & NIS</div>
+                <div style="margin-top:8px">
+                    <svg
+                        width="360"
+                        height="28"
+                        viewBox="0 0 360 28"
+                    >
+                        <rect
+                            x="0"
+                            y="0"
+                            width="360"
+                            height="28"
+                            fill="#07101a"
+                        />
+                        <g>
+                            <template
+                                v-for="(t, idx) in tl"
+                                :key="'tl' + idx"
+                            >
+                                <rect
+                                    :x="(idx * (360 / Math.max(1, tl.length)))"
+                                    y="0"
+                                    :width="Math.max(1, 360 / Math.max(1, tl.length))"
+                                    height="28"
+                                    :fill="t.event === 'predict' ? '#2ecc71' : (t.event === 'updatePosition' ? '#3498db' : (t.event === 'updateVelocity' ? '#f39c12' : '#555'))"
+                                    opacity="0.9"
+                                />
+                            </template>
+                        </g>
+                    </svg>
+                    <div style="height:8px"></div>
+                    <svg
+                        width="360"
+                        height="60"
+                        viewBox="0 0 360 60"
+                        style="background:#02060b; border-radius:6px"
+                    >
+                        <rect
+                            x="0"
+                            y="0"
+                            width="360"
+                            height="60"
+                            fill="#02060b"
+                        />
+                        <g>
+                            <template
+                                v-for="(v, i) in nisVals.slice(-40)"
+                                :key="'nis' + i"
+                            >
+                                <rect
+                                    :x="i * (360 / 40)"
+                                    :y="60 - (Math.min(1, v / 50) * 50)"
+                                    :width="(360 / 40) - 2"
+                                    :height="Math.min(60, (Math.min(1, v / 50) * 50))"
+                                    :fill="v > 16 ? '#ff6b6b' : '#7fffd4'"
+                                    opacity="0.9"
+                                />
+                            </template>
+                        </g>
+                    </svg>
+                </div>
+            </div>
+
             <div style="padding:10px; background:#07101a; border-radius:8px; border:1px solid #173a56;">
                 <div style="font-weight:600">System state</div>
                 <div style="font-size:0.9rem; color:#b8d8ff; margin-top:8px">pos:
