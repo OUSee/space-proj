@@ -4,7 +4,12 @@ export class AEKFFilter {
 	private x: number[]; // state vector [pos3, vel3, att3, biasAcc3, biasGyro3]
 	private P: number[][]; // covariance matrix (15x15)
 	private Q: number[][]; // process noise (15x15)
+	private baseQ: number[][]; // baseline Q for adaptation
+	private procNoiseScale = 1.0;
 	private R: number[][]; // measurement noise (3x3 for position)
+	private baseR: number[][]; // baseline R for adaptation
+	private measNoiseScale = 1.0;
+	private nisHistory: number[] = [];
 	private g: number = 9.81; // gravity magnitude (m/s²)
 
 	// Optional callback for debugging/telemetry. If set, receives a
@@ -19,8 +24,10 @@ export class AEKFFilter {
 	) {
 		this.x = [...initialX];
 		this.P = MatrixUtils.copy(initialP);
-		this.Q = Q;
-		this.R = R;
+		this.Q = MatrixUtils.copy(Q);
+		this.baseQ = MatrixUtils.copy(Q);
+		this.R = MatrixUtils.copy(R);
+		this.baseR = MatrixUtils.copy(R);
 	}
 
 	/**
@@ -139,10 +146,54 @@ export class AEKFFilter {
 		// Attitude from gyro bias
 		for (let i = 0; i < 3; i++) F[i + 6]![i + 12] = -dt;
 
+		const accelMag = Math.sqrt(ax * ax + ay * ay + az * az);
+		const gyroMag = Math.sqrt(gx * gx + gy * gy + gz * gz);
+		this.adaptProcessNoise(accelMag, gyroMag);
+
 		// P = F * P * F' + Q
 		const FP = MatrixUtils.multiply(F, this.P);
 		const FPFt = MatrixUtils.multiply(FP, MatrixUtils.transpose(F));
 		this.P = MatrixUtils.add(FPFt, this.Q);
+	}
+
+	private adaptProcessNoise(accelMag: number, gyroMag: number): void {
+		const accelDeviation = Math.abs(accelMag - this.g);
+		const motionFactor = 1 + Math.min(4, accelDeviation / 2 + gyroMag * 2);
+		const targetScale = Math.max(1.0, Math.min(8.0, motionFactor));
+		if (targetScale > this.procNoiseScale) {
+			this.procNoiseScale = Math.min(8.0, this.procNoiseScale * 1.05);
+		} else {
+			this.procNoiseScale = Math.max(0.5, this.procNoiseScale * 0.98);
+		}
+		this.Q = MatrixUtils.scale(this.baseQ, this.procNoiseScale);
+		console.debug('AEKF adapt Q', {
+			accelMag,
+			gyroMag,
+			procNoiseScale: this.procNoiseScale,
+		});
+	}
+
+	private adaptMeasurementNoise(R_pos: number[][], nis: number): number[][] {
+		const minScale = 0.5;
+		const maxScale = 10.0;
+		if (nis > 16.0) {
+			this.measNoiseScale = Math.min(maxScale, this.measNoiseScale * 1.2);
+		} else if (nis < 4.0) {
+			this.measNoiseScale = Math.max(minScale, this.measNoiseScale * 0.9);
+		} else {
+			this.measNoiseScale = Math.max(
+				minScale,
+				Math.min(maxScale, this.measNoiseScale * 0.99),
+			);
+		}
+		const scaled = MatrixUtils.scale(R_pos, this.measNoiseScale);
+		console.debug('AEKF adapt R', {
+			nis,
+			scale: this.measNoiseScale,
+			Rpos: R_pos,
+			Radapted: scaled,
+		});
+		return scaled;
 	}
 
 	/**
@@ -166,14 +217,29 @@ export class AEKFFilter {
 		const Ht = MatrixUtils.transpose(H);
 		const HP = MatrixUtils.multiply(H, this.P);
 		const HPHt = MatrixUtils.multiply(HP, Ht);
-		const S = MatrixUtils.add(HPHt, R_pos); // correct: HPHt + R
-		const invS = MatrixUtils.inverse(S);
+		const Sorig = MatrixUtils.add(HPHt, R_pos); // correct: HPHt + R
+		let invS = MatrixUtils.inverse(Sorig);
 		const nis = MatrixUtils.vectorDot(
 			y,
 			MatrixUtils.matrixVectorMultiply(invS, y),
 		);
-		if (nis > 16.0) {
-			console.warn('AEKF GPS innovation gated', { nis, y, R_pos });
+		this.nisHistory.push(nis);
+		if (this.nisHistory.length > 20) this.nisHistory.shift();
+
+		const R_adapted = this.adaptMeasurementNoise(R_pos, nis);
+		const S = MatrixUtils.add(HPHt, R_adapted);
+		try {
+			invS = MatrixUtils.inverse(S);
+		} catch (e) {
+			console.warn(
+				'AEKF cannot invert adapted S, rejecting GPS update',
+				e,
+			);
+			return;
+		}
+
+		if (nis > 50.0) {
+			console.warn('AEKF GPS innovation rejected', { nis, y, R_pos });
 			return;
 		}
 		const K = MatrixUtils.multiply(MatrixUtils.multiply(this.P, Ht), invS);
@@ -191,7 +257,7 @@ export class AEKFFilter {
 			MatrixUtils.transpose(I_KH),
 		);
 		const KRKt = MatrixUtils.multiply(
-			MatrixUtils.multiply(K, R_pos),
+			MatrixUtils.multiply(K, R_adapted),
 			MatrixUtils.transpose(K),
 		);
 		this.P = MatrixUtils.add(P1, KRKt);

@@ -32,6 +32,9 @@ export class MatrixUtils {
 		if (a.length !== b.length) throw new Error('Vector lengths must match');
 		return a.reduce((sum, el, i) => sum + el * b[i]!, 0);
 	}
+	static scale(A: number[][], factor: number): number[][] {
+		return A.map((row) => row.map((value) => value * factor));
+	}
 	static inverse(A: number[][]): number[][] {
 		// Simple 3x3 inverse for demo
 		if (A.length !== 3 || !A[0] || A[0].length !== 3) return A; // placeholder
