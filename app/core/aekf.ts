@@ -93,6 +93,9 @@ export class AEKFFilter {
 			bgz!,
 		];
 
+		// Prevent runaway state values (sanity clamp)
+		this.sanitizeState();
+
 		// ----- Covariance prediction (linearised) -----
 		const F = MatrixUtils.eye(15);
 		// Position from velocity
@@ -121,7 +124,10 @@ export class AEKFFilter {
 		];
 
 		const z = pos;
-		const y = [z[0] - this.x[0]!, z[1] - this.x[1]!, z[2] - this.x[2]!];
+		const x0: number = this.x[0] ?? 0;
+		const x1: number = this.x[1] ?? 0;
+		const x2: number = this.x[2] ?? 0;
+		const y = [z[0] - x0, z[1] - x1, z[2] - x2];
 
 		const Ht = MatrixUtils.transpose(H);
 		const HP = MatrixUtils.multiply(H, this.P);
@@ -147,6 +153,9 @@ export class AEKFFilter {
 			MatrixUtils.transpose(K),
 		);
 		this.P = MatrixUtils.add(P1, KRKt);
+
+		// Sanity clamp after measurement update
+		this.sanitizeState();
 	}
 
 	/**
@@ -163,8 +172,10 @@ export class AEKFFilter {
 		];
 
 		// Measurement: velocity should be zero
-		const z = [0, 0, 0];
-		const y = [z[0] - this.x[3]!, z[1] - this.x[4]!, z[2] - this.x[5]!];
+		const x3: number = this.x[3] ?? 0;
+		const x4: number = this.x[4] ?? 0;
+		const x5: number = this.x[5] ?? 0;
+		const y = [-x3, -x4, -x5];
 
 		const Ht = MatrixUtils.transpose(H);
 		const HP = MatrixUtils.multiply(H, this.P);
@@ -190,6 +201,9 @@ export class AEKFFilter {
 			MatrixUtils.transpose(K),
 		);
 		this.P = MatrixUtils.add(P1, KRKt);
+
+		// Sanity clamp after velocity update
+		this.sanitizeState();
 	}
 
 	// Getters for reactive state
@@ -215,7 +229,7 @@ export class AEKFFilter {
 	getCovarianceTrace(): number {
 		let tr = 0;
 		for (let i = 0; i < this.P.length; i++) {
-			tr += (this.P[i] && this.P[i][i]) || 0;
+			if (this.P[i] && this.P[i]![i] !== undefined) tr += this.P[i]![i]!;
 		}
 		return tr;
 	}
@@ -225,5 +239,54 @@ export class AEKFFilter {
 	}
 	setCovariance(P: number[][]) {
 		this.P = MatrixUtils.copy(P);
+	}
+
+	/**
+	 * Clamp state entries to reasonable ranges to avoid numerical runaway.
+	 */
+	private sanitizeState(): void {
+		// thresholds
+		const vmax = 50.0; // m/s
+		const bacc_max = 50.0; // m/s^2
+		const bgyro_max = 5.0; // rad/s (~286 deg/s)
+
+		// Clamp velocities (indices 3..5)
+		for (let i = 3; i <= 5; i++) {
+			if (Math.abs(this.x[i]!) > vmax) {
+				this.x[i] = Math.sign(this.x[i]!) * vmax;
+				if (
+					this.P[i] &&
+					this.P[i]![i] !== undefined &&
+					this.P[i]![i]! < 1.0
+				)
+					this.P[i]![i]! = 1.0;
+			}
+		}
+
+		// Clamp accel bias (indices 9..11)
+		for (let i = 9; i <= 11; i++) {
+			if (Math.abs(this.x[i]!) > bacc_max) {
+				this.x[i] = Math.sign(this.x[i]!) * bacc_max;
+				if (
+					this.P[i] &&
+					this.P[i]![i] !== undefined &&
+					this.P[i]![i]! < 1.0
+				)
+					this.P[i]![i]! = 1.0;
+			}
+		}
+
+		// Clamp gyro bias (indices 12..14)
+		for (let i = 12; i <= 14; i++) {
+			if (Math.abs(this.x[i]!) > bgyro_max) {
+				this.x[i] = Math.sign(this.x[i]!) * bgyro_max;
+				if (
+					this.P[i] &&
+					this.P[i]![i] !== undefined &&
+					this.P[i]![i]! < 1.0
+				)
+					this.P[i]![i]! = 1.0;
+			}
+		}
 	}
 }
